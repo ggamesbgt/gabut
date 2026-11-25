@@ -24,10 +24,51 @@ const get=id=>document.getElementById(id);
 const canvas=document.querySelector('canvas'), ctx=canvas.getContext('2d');
 const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
 const FLOOR=307, SPEED=4.8, R=11;
+const pit = (x,width) => ['holes',x,width];
+const spikes = (x,width=46) => ['spikes',x,width];
+const fragile = (x,width) => ['crumble',x,width];
+const drop = (x,width=40) => ['blocks',x,width];
+function room(name,...hazards) {
+  const stage={name,holes:[],spikes:[],crumble:[],blocks:[]};
+  for(const [type,x,width] of hazards) stage[type].push([x,x+width]);
+  return stage;
+}
+const palettes=[
+  ['#212743','#4c4265','#796b99'],
+  ['#17353d','#416365','#5a857e'],
+  ['#3f2329','#754a42','#996652']
+];
 const levels=[
   {name:'Duri Bangun',holes:[[440,535]],spikes:[[235,281]],crumble:[],blocks:[]},
   {name:'Lantai Palsu',holes:[[574,655]],spikes:[],crumble:[[199,304],[371,452]],blocks:[]},
-  {name:'Gudang Runtuh',holes:[[315,402]],spikes:[[500,544]],crumble:[[683,728]],blocks:[[174,218],[454,481]]}
+  {name:'Gudang Runtuh',holes:[[315,402]],spikes:[[500,544]],crumble:[[683,728]],blocks:[[174,218],[454,481]]},
+  room('Ambang Retak', spikes(178), pit(420,88), fragile(629,65)),
+  room('Pintu Geser', drop(138), fragile(259,92), spikes(480), pit(662,72)),
+  room('Koridor Sempit', pit(156,96), spikes(345), fragile(542,99)),
+  room('Bunyi dari Langit', drop(148,55), drop(334), pit(478,98), spikes(674)),
+  room('Lantai Berderak', fragile(148,98), fragile(337,104), fragile(527,86)),
+  room('Duri Beruntun', spikes(163), spikes(348,61), spikes(533,70)),
+  room('Jembatan Putus', pit(151,105), pit(346,101), pit(547,103)),
+  room('Pabrik Tua', drop(129), spikes(242,59), drop(417), fragile(518,91)),
+  room('Menara Blok', drop(149), drop(299,53), drop(456), drop(610,54)),
+  room('Palung Kembar', pit(219,108), pit(437,109), spikes(641)),
+  room('Terowongan Abu', fragile(165,103), spikes(353), pit(545,94)),
+  room('Lantai Salah', fragile(175,103), fragile(363,103), pit(565,95)),
+  room('Langit Rendah', drop(126), drop(235), drop(344), drop(453), drop(562), drop(671)),
+  room('Retakan Panjang', fragile(170,117), pit(370,112), spikes(569,72)),
+  room('Ruang Mesin', spikes(149,74), drop(338), pit(442,107), fragile(638,77)),
+  room('Tiga Ambang', pit(164,101), fragile(351,99), spikes(535,81)),
+  room('Duri dan Debu', drop(139), spikes(257,72), fragile(453,99), spikes(645,66)),
+  room('Gerbang Ganda', pit(176,111), drop(361), spikes(453,77), pit(653,79)),
+  room('Kubah Runtuh', drop(137,55), pit(243,91), drop(413), fragile(513,102), drop(702)),
+  room('Lintasan Rapuh', fragile(159,117), fragile(369,116), fragile(577,114)),
+  room('Lorong Bergerigi', spikes(155,83), spikes(350,85), spikes(548,84)),
+  room('Jembatan Abu', pit(156,114), fragile(352,111), pit(560,117)),
+  room('Koridor Merah', spikes(157,83), drop(333), spikes(455,87), fragile(653,78)),
+  room('Tungku Retak', fragile(155,111), spikes(349,83), drop(536), pit(633,97)),
+  room('Tebing Dalam', pit(148,118), pit(343,118), pit(543,118)),
+  room('Pintu Terakhir', drop(132), fragile(229,112), spikes(424,85), pit(625,102)),
+  room('Jebakan Pamungkas', spikes(144,85), pit(336,115), fragile(535,115), drop(726))
 ];
 const held=new Map();
 const player={};
@@ -95,11 +136,12 @@ function tick(){
 }
 function blockBottom(trap){return Math.min(FLOOR,72+Math.max(0,trap.time-19)*13);}
 function draw(){
+  const [top,bottom,ground]=palettes[Math.floor(level/10)];
   const sky=ctx.createLinearGradient(0,0,0,400);
-  sky.addColorStop(0,'#212743');sky.addColorStop(1,'#4c4265');ctx.fillStyle=sky;ctx.fillRect(0,0,800,400);
+  sky.addColorStop(0,top);sky.addColorStop(1,bottom);ctx.fillStyle=sky;ctx.fillRect(0,0,800,400);
   ctx.strokeStyle='#a396c226';ctx.lineWidth=1;
   for(let x=0;x<800;x+=45){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,FLOOR);ctx.stroke();}
-  ctx.fillStyle='#796b99';ctx.fillRect(0,FLOOR,800,93);
+  ctx.fillStyle=ground;ctx.fillRect(0,FLOOR,800,93);
   for(const [left,right] of levels[level].holes){ctx.fillStyle='#17182c';ctx.fillRect(left,FLOOR,right-left,93);}
   ctx.fillStyle='#aaffdf';ctx.fillRect(746,FLOOR-53,31,53);
   ctx.fillStyle='#315c61';ctx.fillRect(751,FLOOR-47,21,47);
