@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arus Malam</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0d131b;color:#e8f5f2;font:16px system-ui;min-height:100svh;display:grid;place-items:center;padding:20px}main{width:min(100%,840px)}header{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:14px}h1{margin:0;font-size:clamp(30px,6vw,54px);letter-spacing:-.065em;line-height:1}small,p{color:#a5bdbf}#score{font:700 44px monospace;color:#8fffe1;line-height:1}.arena{position:relative;border:1px solid #34515b;border-radius:18px;overflow:hidden;background:#101d29}canvas{width:100%;max-height:62svh;display:block;object-fit:contain;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none;padding:16px;background:#0b152473}.overlay[hidden]{display:none}h2{margin:0;font-size:clamp(24px,5vw,44px)}.overlay p{margin:6px 0}footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}button{border:1px solid #3c6370;border-radius:9px;background:#162932;color:#e8f5f2;font:600 14px system-ui;padding:10px 14px;cursor:pointer}button[aria-pressed=true]{background:#96f5da;color:#09231e;border-color:#96f5da}button:disabled{opacity:.45;cursor:default}button:focus-visible{outline:2px solid white;outline-offset:2px}#help{font-size:14px;margin:10px 0 0}
+</style>
+<main>
+<nav aria-label="Navigasi game"><a href="../index.html" style="color:#a5bdbf;display:inline-block;margin-bottom:12px;font-size:14px">← Kembali ke Gabut</a></nav>
+<header><div><h1>Arus Malam</h1><small id="record"></small></div><div aria-label="Skor" id="score">00</div></header>
+<div class="arena">
+<canvas tabindex="0" width="800" height="450" aria-label="Arena drone. Tekan spasi atau sentuh arena untuk naik."></canvas>
+<div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
+</div>
+<footer><button id="manual">Main sendiri</button><button id="ai">Jalankan AI</button><button id="pause">Jeda</button></footer>
+<p id="help"></p>
+</main>
+<script>
+'use strict';
+const get = id => document.getElementById(id);
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const X = 165, R = 12, GATE = 70, SPACING = 365;
+const GRAVITY = .32, BOOST = -5.8;
+const stars = Array.from({length:75}, (_, i) => ({
+  x: (i * 131.53) % W, y: (i * 73.11) % 340, size: i % 7 === 0 ? 2 : 1
+}));
+let mode = 'manual', state = 'ready', y, velocity, score, gates, ticks, targetY;
+let records = {manual:0, ai:0};
+try {
+  const saved = JSON.parse(localStorage.getItem('arus-malam-records'));
+  for (const key of ['manual','ai']) {
+    if (Number.isSafeInteger(saved?.[key]) && saved[key] >= 0) records[key] = saved[key];
+  }
+} catch {}
+function reset(nextMode, nextState) {
+  mode = nextMode;
+  state = nextState;
+  y = H / 2;
+  velocity = score = ticks = 0;
+  gates = [{x:W * .74, center:H / 2, gap:164, passed:false}];
+  targetY = y;
+  refresh();
+}
+function refresh() {
+  get('score').textContent = String(score).padStart(2,'0');
+  get('record').textContent = 'Rekor Anda ' + records.manual + ' · Rekor AI ' + records.ai;
+  get('manual').setAttribute('aria-pressed',mode === 'manual');
+  get('ai').setAttribute('aria-pressed',mode === 'ai');
+  get('pause').disabled = state !== 'playing' && state !== 'paused';
+  get('pause').textContent = state === 'paused' ? 'Lanjutkan' : 'Jeda';
+  get('overlay').hidden = state === 'playing';
+  get('status').textContent = {ready:'Terbang menembus gerbang', paused:'Dijeda', over:'Penerbangan selesai'}[state] || '';
+  get('detail').textContent = state === 'over' ? 'Skor ' + score + ' · Pilih mode untuk terbang lagi' :
+    state === 'paused' ? 'Tekan Lanjutkan untuk kembali terbang' : 'Kendalikan drone atau saksikan AI bermain.';
+  get('help').textContent = mode === 'ai' ?
+    'AI membaca celah berikutnya. Garis putus-putus menunjukkan ketinggian target.' :
+    'Spasi, klik, atau sentuh arena untuk naik. Lewati setiap gerbang untuk mendapat satu poin.';
+}
+function flap() {
+  velocity = BOOST;
+}
+function manualInput() {
+  if (state === 'paused' || (mode === 'ai' && state === 'playing')) return;
+  if (state !== 'playing') reset('manual','playing');
+  flap();
+}
+function autopilot() {
+  const next = gates.find(gate => gate.x + GATE >= X - R);
+  if (!next) return;
+  targetY = next.center;
+  const projectedY = y + Math.max(0, velocity) * 2;
+  const canClimb = velocity >= 0 || y > targetY + 38;
+  if (canClimb && projectedY > targetY + 28 && velocity > BOOST + .9) flap();
+}
+function step() {
+  const speed = 3.25 + Math.min(score,28) * .064;
+  if (mode === 'ai') autopilot();
+  ticks++;
+  velocity += GRAVITY;
+  y += velocity;
+  for (const gate of gates) {
+    gate.x -= speed;
+    const inColumn = gate.x < X + R && gate.x + GATE > X - R;
+    if (inColumn && Math.abs(y - gate.center) + R > gate.gap / 2) return finish();
+    if (!gate.passed && gate.x + GATE <= X - R) {
+      gate.passed = true;
+      score++;
+      if (score > records[mode]) {
+        records[mode] = score;
+        try { localStorage.setItem('arus-malam-records',JSON.stringify(records)); } catch {}
+      }
+      refresh();
+    }
+  }
+  if (y - R <= 0 || y + R >= H) return finish();
+  const last = gates.at(-1);
+  if (last.x < W - SPACING) {
+    const center = Math.max(112, Math.min(H - 112, last.center + (Math.random() * 2 - 1) * 105));
+    gates.push({x:last.x + SPACING, center, gap:Math.max(129,164-score), passed:false});
+  }
+  if (gates[0].x + GATE + 100 < 0) gates.shift();
+}
+function finish() {
+  state = 'over';
+  refresh();
+}
+function draw() {
+  const sky = ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#101629'); sky.addColorStop(1,'#27505b');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#9ac7d895';
+  for (const star of stars) ctx.fillRect((star.x - ticks * .15 % W + W) % W,star.y,star.size,star.size);
+  ctx.fillStyle = '#b5e8dd';
+  ctx.beginPath(); ctx.arc(642,106,39,0,Math.PI*2); ctx.fill();
+  for (let layer = 0; layer < 3; layer++) {
+    ctx.fillStyle = ['#233c50','#172e40','#102633'][layer];
+    ctx.beginPath(); ctx.moveTo(0,H);
+    for (let x = 0; x <= W; x += 10) {
+      const z = x + ticks * (.31 + layer * .36);
+      const height = 321 + layer * 36 + 24 * Math.sin(z / 91 + layer) + 15 * Math.cos(z / 42);
+      ctx.lineTo(x,height);
+    }
+    ctx.lineTo(W,H); ctx.fill();
+  }
+  for (const gate of gates) {
+    const top = gate.center - gate.gap / 2, bottom = gate.center + gate.gap / 2;
+    ctx.fillStyle = '#243a48';
+    ctx.fillRect(gate.x,0,GATE,top); ctx.fillRect(gate.x,bottom,GATE,H-bottom);
+    ctx.fillStyle = '#315665';
+    ctx.fillRect(gate.x + 11,0,5,top); ctx.fillRect(gate.x + 11,bottom,5,H-bottom);
+    ctx.fillStyle = '#75ead1';
+    ctx.fillRect(gate.x,top-4,GATE,4); ctx.fillRect(gate.x,bottom,GATE,4);
+  }
+  if (mode === 'ai') {
+    ctx.strokeStyle = '#8fffe1a5'; ctx.setLineDash([4,6]); ctx.beginPath();
+    ctx.moveTo(X+22,y); ctx.lineTo(X+89,targetY); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.save(); ctx.translate(X,y); ctx.rotate(Math.max(-.38,Math.min(.55,velocity*.061)));
+  ctx.fillStyle = '#fdad80'; ctx.beginPath();
+  ctx.moveTo(-13,-4); ctx.lineTo(-26-3*Math.sin(ticks),0); ctx.lineTo(-13,4); ctx.fill();
+  ctx.fillStyle = '#99f2e2'; ctx.beginPath(); ctx.roundRect(-15,-9,30,18,7); ctx.fill();
+  ctx.fillStyle = '#183749'; ctx.beginPath(); ctx.roundRect(1,-5,9,10,3); ctx.fill();
+  ctx.restore();
+}
+get('manual').onclick = () => { reset('manual','playing'); canvas.focus(); };
+get('ai').onclick = () => reset('ai','playing');
+get('pause').onclick = () => { state = state === 'paused' ? 'playing' : 'paused'; refresh(); };
+canvas.addEventListener('pointerdown',manualInput);
+document.addEventListener('keydown', event => {
+  if (event.code !== 'Space' || event.target.closest('button')) return;
+  event.preventDefault();
+  if (!event.repeat) manualInput();
+});
+reset('manual','ready');
+let previousTime, accumulated = 0;
+function frame(time) {
+  accumulated = state === 'playing' ? accumulated + Math.min(time - (previousTime ?? time),67) : 0;
+  previousTime = time;
+  while (accumulated >= 1000/60 && state === 'playing') {
+    step();
+    accumulated -= 1000/60;
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</html>
