@@ -37,6 +37,10 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .fortress::after { background: #2a1a24; clip-path: polygon(0 85%,19% 73%,30% 90%,64% 87%,86% 68%,100% 80%,100% 100%,0 100%); }
 .ember-blade { position: absolute; z-index: 1; left: 49%; top: 28%; width: 10px; height: 78px; background: #ffe0a3; border-radius: 80% 20% 0 0; transform: rotate(31deg); box-shadow: 0 0 18px #ffac61; }
 .ember-blade::after { content: ""; position: absolute; left: -12px; bottom: 12px; width: 34px; height: 6px; background: #4e262f; border-radius: 4px; }
+.trap { background: linear-gradient(#293352, #67537e); }
+.trap::before { background: #a2769e; clip-path: polygon(0 100%,0 65%,30% 65%,30% 78%,60% 78%,60% 53%,100% 53%,100% 100%); }
+.trap::after { background: #ff9f8b; clip-path: polygon(63% 53%,69% 35%,75% 53%,81% 35%,87% 53%); }
+.trap-cube { position: absolute; z-index:1; left:41%; top:35%; width:29px; height:29px; background:#ffdda1; border-radius:4px; transform:rotate(-13deg); }
 </style>
 </head>
 <body>
@@ -62,6 +66,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art fortress" aria-hidden="true"><span class="ember-blade"></span></div>
       <div class="info">
         <div><h2>Benteng Bara</h2><p>Hindari sapuan dan kalahkan Penjaga Tungku.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/kotak-jebak.html" aria-label="Mainkan Kotak Jebak">
+      <div class="art trap" aria-hidden="true"><span class="trap-cube"></span></div>
+      <div class="info">
+        <div><h2>Kotak Jebak</h2><p>Lewati tiga ruang dengan jebakan kejutan.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
