@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lompat Nada — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#171525;color:#fff7ea;font:16px system-ui}main{max-width:900px;margin:auto;padding:clamp(12px,4vw,32px)}a{color:#c9ff83}header{display:flex;justify-content:space-between;align-items:end;gap:8px;margin:12px 0}h1{font-size:clamp(30px,7vw,64px);letter-spacing:-.07em;margin:0;line-height:1}output{color:#c9ff83;font:700 clamp(22px,5vw,38px) monospace}progress{display:block;width:100%;height:8px;accent-color:#c9ff83;margin-bottom:10px}.arena{position:relative}.arena canvas{display:block;width:100%;aspect-ratio:2/1;border:1px solid #655b83;border-radius:14px;background:#2d2551;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:10px;background:#110e29a6;border-radius:14px;pointer-events:none}.overlay[hidden]{display:none}h2{margin:0;font-size:clamp(20px,5vw,38px)}p{color:#ddd1ed;margin:8px 0;font-size:14px}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{background:#362b54;color:inherit;border:1px solid #7e6da1;border-radius:9px;padding:8px 12px;font:inherit}button[aria-pressed=true]{background:#c9ff83;color:#1b2919}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #c9ff83;outline-offset:2px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Lompat Nada</h1><output id="percent" aria-label="Persentase progres">0%</output></header>
+<progress id="progress" aria-label="Progres lintasan" max="100" value="0"></progress>
+<div class="arena">
+<canvas width="800" height="400" tabindex="0" aria-label="Arena Lompat Nada. Ketuk atau tekan Spasi untuk melompat."></canvas>
+<div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
+</div>
+<footer>
+<button id="play">Mulai</button><button id="ai" aria-pressed="false">Jalankan AI</button>
+<button id="pause">Jeda</button><button id="music" aria-pressed="false">Musik: OFF</button>
+<button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Ketuk arena atau tekan Spasi. Garis hijau menandai ketukan untuk melompat. Selesaikan lintasan hingga 100%.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const W=800,H=400,FLOOR=312,X=145,SIZE=27,PACE=6,FRAMES=30,BEAT=PACE*FRAMES,FINISH=44*BEAT;
+const sequence=[
+  [2,1],[4,1],[6,2],[8,1],[9,1],[11,2],[13,3],[15,1],[16,2],
+  [18,2],[19,1],[20,2],[22,3],[24,1],[25,2],[27,3],[28,1],
+  [30,2],[31,3],[32,2],[34,3],[35,3],[37,2],[38,3],[39,3],[40,2],[41,3],[42,3]
+];
+const groups=sequence.map(([beat,count])=>({cue:beat*BEAT,start:beat*BEAT+54,count}));
+const spikes=groups.flatMap(({start,count})=>Array.from({length:count},(_,i)=>start+i*26));
+const player={};
+let frameNo,distance,attempts=0,state='ready',ai=false,percent=-1;
+let music, musicOn=false, musicMaster;
+const AudioEngine=window.AudioContext||window.webkitAudioContext;
+if(!AudioEngine)get('music').disabled=true;
+get('music').onclick=async()=>{
+  try {
+    if(!music){
+      music=new AudioEngine();
+      musicMaster=music.createGain();musicMaster.gain.value=0;musicMaster.connect(music.destination);
+    }
+    musicOn=!musicOn;
+    if(musicOn)await music.resume();
+    musicMaster.gain.value=musicOn ? .65 : 0;
+  } catch {musicOn=false;}
+  get('music').textContent='Musik: '+(musicOn?'ON':'OFF');
+  get('music').setAttribute('aria-pressed',String(musicOn));
+};
+function tone(hz,duration,volume,type){
+  const time=music.currentTime,osc=music.createOscillator(),gain=music.createGain();
+  osc.type=type;osc.frequency.value=hz;
+  gain.gain.setValueAtTime(volume,time);
+  gain.gain.exponentialRampToValueAtTime(.0001,time+duration);
+  osc.connect(gain).connect(musicMaster);osc.start(time);osc.stop(time+duration);
+}
+function beat(){
+  if(!musicOn||music?.state!=='running')return;
+  const count=Math.floor(frameNo/FRAMES);
+  const bass=[110,110,131,98,110,165,131,98];
+  tone(bass[count%bass.length],.21,.10,'triangle');
+  tone(count%2?660:880,.045,.028,'square');
+}
+function setProgress(){
+  const next=Math.min(100,Math.floor(100*distance/FINISH));
+  if(next===percent)return;
+  percent=next;get('percent').textContent=next+'%';get('progress').value=next;
+}
+function refresh(){
+  get('pause').disabled=state!=='playing'&&state!=='paused';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  get('play').textContent=state==='ready'?'Mulai':'Ulangi';
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Ketuk untuk mulai',paused:'Dijeda',lost:'Terhenti di '+percent+'%',won:'Lintasan selesai!'}[state]||'';
+  get('detail').textContent=state==='lost'?'Percobaan '+attempts+' · Ketuk untuk ulang':state==='won'?'100% · '+attempts+' percobaan':'';
+}
+function reset(mode,initial='playing'){
+  frameNo=distance=0;ai=mode;state=initial;
+  if(initial==='playing')attempts++;
+  Object.assign(player,{y:FLOOR-SIZE,vy:0,grounded:true});
+  setProgress();refresh();
+}
+function jump(){
+  if(!player.grounded)return;
+  player.vy=-12.8;player.grounded=false;sound('move');
+}
+function input(){
+  if(state==='paused')return;
+  if(state!=='playing'){reset(false);return;}
+  if(ai){ai=false;refresh();}
+  jump();
+}
+function tick(){
+  if(state!=='playing')return;
+  if(frameNo%FRAMES===0)beat();
+  if(ai&&groups.some(group=>group.cue===distance))jump();
+  frameNo++;distance=frameNo*PACE;
+  player.vy+=.9;player.y+=player.vy;
+  if(player.y>=FLOOR-SIZE){player.y=FLOOR-SIZE;player.vy=0;player.grounded=true;}
+  setProgress();
+  if(player.y+SIZE>FLOOR-26&&spikes.some(x=>distance+SIZE-4>x+5&&distance+4<x+21)){
+    state='lost';ai=false;sound('miss');refresh();return;
+  }
+  if(distance>=FINISH){state='won';ai=false;sound('win');refresh();}
+}
+function draw(){
+  const phase=frameNo%FRAMES;
+  ctx.fillStyle=distance>=32*BEAT?'#452747':distance>=16*BEAT?'#2a335c':'#30264e';
+  ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#e9c9ff25';ctx.lineWidth=1;
+  for(let x=X-distance%BEAT-BEAT;x<W;x+=BEAT){
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+  }
+  ctx.fillStyle='#17152a';ctx.fillRect(0,FLOOR,W,H-FLOOR);
+  ctx.fillStyle=phase<4?'#e3b2ff':'#9573bf';ctx.fillRect(0,FLOOR,W,3);
+  for(const group of groups){
+    const x=X+group.cue-distance;
+    if(x>=-4&&x<W){ctx.fillStyle='#c9ff83';ctx.fillRect(x,FLOOR+5,4,18);}
+  }
+  for(const place of spikes){
+    const x=X+place-distance;
+    if(x<-26||x>W)continue;
+    ctx.fillStyle='#ff9b96';ctx.beginPath();ctx.moveTo(x,FLOOR);
+    ctx.lineTo(x+13,FLOOR-26);ctx.lineTo(x+26,FLOOR);ctx.fill();
+  }
+  const goal=X+FINISH-distance;
+  if(goal<W){ctx.fillStyle='#c9ff83';ctx.fillRect(goal,FLOOR-82,6,82);ctx.fillRect(goal,FLOOR-82,39,22);}
+  if(state!=='lost'){
+    ctx.save();ctx.translate(X+SIZE/2,player.y+SIZE/2);
+    if(!player.grounded)ctx.rotate(player.vy*.045);
+    ctx.fillStyle='#a9dac8';ctx.fillRect(-SIZE/2,-SIZE/2,SIZE,SIZE);
+    ctx.fillStyle='#253151';ctx.fillRect(-7,-5,14,4);ctx.restore();
+  }
+}
+canvas.addEventListener('pointerdown',event=>{if(event.button===0){canvas.focus();input();}});
+document.addEventListener('keydown',event=>{
+  if((event.code==='Space'||event.code==='ArrowUp')&&!event.target.closest('button,a')){
+    event.preventDefault();if(!event.repeat)input();
+  }
+});
+get('play').onclick=()=>{reset(false);canvas.focus();};
+get('ai').onclick=()=>{if(ai){ai=false;refresh();}else reset(true);canvas.focus();};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';refresh();if(state==='playing')canvas.focus();};
+window.addEventListener('blur',()=>{if(state==='playing'){state='paused';refresh();}});
+let previous,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(previous??now));previous=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+reset(false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
