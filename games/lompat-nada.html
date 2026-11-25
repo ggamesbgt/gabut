@@ -9,13 +9,14 @@
 <main>
 <a href="../index.html">← Kembali ke Gabut</a>
 <header><h1>Lompat Nada</h1><output id="percent" aria-label="Persentase progres">0%</output></header>
+<p id="track"></p>
 <progress id="progress" aria-label="Progres lintasan" max="100" value="0"></progress>
 <div class="arena">
 <canvas width="800" height="400" tabindex="0" aria-label="Arena Lompat Nada. Ketuk atau tekan Spasi untuk melompat."></canvas>
 <div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
 </div>
 <footer>
-<button id="play">Mulai</button><button id="ai" aria-pressed="false">Jalankan AI</button>
+<button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button><button id="ai" aria-pressed="false">Jalankan AI</button>
 <button id="pause">Jeda</button><button id="music" aria-pressed="false">Musik: OFF</button>
 <button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
 </footer>
@@ -27,14 +28,45 @@
 const get=id=>document.getElementById(id);
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
-const W=800,H=400,FLOOR=312,X=145,SIZE=27,PACE=6,FRAMES=30,BEAT=PACE*FRAMES,FINISH=44*BEAT;
+const W=800,H=400,FLOOR=312,X=145,SIZE=27;
 const sequence=[
   [2,1],[4,1],[6,2],[8,1],[9,1],[11,2],[13,3],[15,1],[16,2],
   [18,2],[19,1],[20,2],[22,3],[24,1],[25,2],[27,3],[28,1],
   [30,2],[31,3],[32,2],[34,3],[35,3],[37,2],[38,3],[39,3],[40,2],[41,3],[42,3]
 ];
-const groups=sequence.map(([beat,count])=>({cue:beat*BEAT,start:beat*BEAT+54,count}));
-const spikes=groups.flatMap(({start,count})=>Array.from({length:count},(_,i)=>start+i*26));
+const levels=[
+  makeLevel('Ketukan Pertama',30,6,44,'#30264e',sequence),
+  makeLevel('Lampu Kota',30,6.15,46,'#29365a',[
+    [2,2],[4,1],[5,2],[7,3],[9,2],[11,1],[12,3],[13,2],[15,3],[17,2],[18,2],[20,3],
+    [22,2],[23,3],[24,1],[26,2],[28,3],[29,2],[31,3],[32,3],[34,2],[35,1],[36,3],
+    [38,3],[40,2],[41,3],[42,2],[44,3]
+  ]),
+  makeLevel('Arus Neon',29,6.25,48,'#293b50',[
+    [2,3],[3,1],[5,2],[7,3],[8,3],[10,2],[11,3],[13,1],[14,2],[15,3],[17,3],[19,2],
+    [20,3],[21,2],[23,3],[25,3],[26,1],[28,2],[29,3],[30,3],[32,2],[33,3],
+    [35,3],[36,3],[38,1],[39,3],[40,3],[42,2],[43,3],[44,3],[46,3]
+  ]),
+  makeLevel('Dentum Ungu',29,6.45,50,'#472d63',[
+    [2,2],[3,3],[4,3],[6,3],[8,2],[9,3],[10,3],[12,3],[13,2],[14,3],[16,3],[17,3],
+    [18,1],[20,3],[21,3],[23,2],[24,3],[25,3],[27,3],[29,3],[30,2],[31,3],
+    [33,3],[34,3],[35,3],[37,2],[38,3],[39,3],[41,3],[43,3],[44,3],[45,2],[47,3],[48,3]
+  ]),
+  makeLevel('Puncak Irama',28,6.6,54,'#552b4e',[
+    [2,3],[3,3],[5,3],[6,2],[7,3],[9,3],[10,3],[11,3],[13,2],[14,3],[15,3],[17,3],
+    [18,3],[19,3],[20,2],[22,3],[23,3],[25,3],[26,3],[27,3],[29,3],[30,2],
+    [31,3],[32,3],[34,3],[35,3],[36,3],[38,3],[39,3],[40,2],[41,3],[43,3],[44,3],
+    [45,3],[46,3],[48,3],[49,3],[50,3],[51,3],[52,3]
+  ])
+];
+function makeLevel(name,frames,pace,beats,color,pattern){
+  const stride=pace*frames;
+  const groups=pattern.map(([beat,count])=>({frame:beat*frames,cue:beat*stride,start:beat*stride+54,count}));
+  const spikes=groups.flatMap(({start,count})=>Array.from({length:count},(_,i)=>start+i*26));
+  return {name,frames,pace,stride,finishFrame:frames*beats,finish:stride*beats,color,groups,spikes,
+    jumpFrames:new Set(groups.map(group=>group.frame))};
+}
+let level=0,transition=0;
+const stage=()=>levels[level];
 const player={};
 let frameNo,distance,attempts=0,state='ready',ai=false,percent=-1;
 let music, musicOn=false, musicMaster;
@@ -62,28 +94,30 @@ function tone(hz,duration,volume,type){
 }
 function beat(){
   if(!musicOn||music?.state!=='running')return;
-  const count=Math.floor(frameNo/FRAMES);
+  const count=Math.floor(frameNo/stage().frames);
   const bass=[110,110,131,98,110,165,131,98];
   tone(bass[count%bass.length],.21,.10,'triangle');
   tone(count%2?660:880,.045,.028,'square');
 }
 function setProgress(){
-  const next=Math.min(100,Math.floor(100*distance/FINISH));
+  const next=Math.min(100,Math.floor(100*frameNo/stage().finishFrame));
   if(next===percent)return;
   percent=next;get('percent').textContent=next+'%';get('progress').value=next;
 }
 function refresh(){
   get('pause').disabled=state!=='playing'&&state!=='paused';
   get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
-  get('play').textContent=state==='ready'?'Mulai':'Ulangi';
+  get('play').textContent=state==='ready'?'Mulai':state==='won'?'Main lagi':'Ulangi level';
+  get('next').hidden=state!=='clear';
   get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
   get('ai').setAttribute('aria-pressed',String(ai));
   get('overlay').hidden=state==='playing';
-  get('status').textContent={ready:'Ketuk untuk mulai',paused:'Dijeda',lost:'Terhenti di '+percent+'%',won:'Lintasan selesai!'}[state]||'';
-  get('detail').textContent=state==='lost'?'Percobaan '+attempts+' · Ketuk untuk ulang':state==='won'?'100% · '+attempts+' percobaan':'';
+  get('status').textContent={ready:'Ketuk untuk mulai',paused:'Dijeda',lost:'Terhenti di '+percent+'%',clear:'Level selesai!',won:'Lima level selesai!'}[state]||'';
+  get('detail').textContent=state==='lost'?'Percobaan '+attempts+' · Ketuk untuk ulang':state==='clear'?'100% · '+(ai?'AI akan lanjut otomatis':'Tekan Level berikutnya'):state==='won'?'100% · '+attempts+' percobaan di level terakhir':'';
 }
 function reset(mode,initial='playing'){
-  frameNo=distance=0;ai=mode;state=initial;
+  frameNo=distance=transition=0;ai=mode;state=initial;
+  get('track').textContent='Level '+(level+1)+' / '+levels.length+' · '+stage().name+' · '+Math.round(3600/stage().frames)+' BPM';
   if(initial==='playing')attempts++;
   Object.assign(player,{y:FLOOR-SIZE,vy:0,grounded:true});
   setProgress();refresh();
@@ -92,31 +126,48 @@ function jump(){
   if(!player.grounded)return;
   player.vy=-12.8;player.grounded=false;sound('move');
 }
+function nextLevel(){
+  if(state!=='clear')return;
+  level++;attempts=0;reset(ai);
+}
+function restart(mode){
+  if(state==='won'){level=0;attempts=0;}
+  reset(mode);
+}
 function input(){
   if(state==='paused')return;
-  if(state!=='playing'){reset(false);return;}
+  if(state==='clear'){nextLevel();return;}
+  if(state!=='playing'){restart(false);return;}
   if(ai){ai=false;refresh();}
   jump();
 }
 function tick(){
+  if(state==='clear'&&ai&&--transition<=0){nextLevel();return;}
   if(state!=='playing')return;
-  if(frameNo%FRAMES===0)beat();
-  if(ai&&groups.some(group=>group.cue===distance))jump();
-  frameNo++;distance=frameNo*PACE;
+  const track=stage();
+  if(frameNo%track.frames===0)beat();
+  if(ai&&track.jumpFrames.has(frameNo))jump();
+  frameNo++;distance=frameNo*track.pace;
   player.vy+=.9;player.y+=player.vy;
   if(player.y>=FLOOR-SIZE){player.y=FLOOR-SIZE;player.vy=0;player.grounded=true;}
   setProgress();
-  if(player.y+SIZE>FLOOR-26&&spikes.some(x=>distance+SIZE-4>x+5&&distance+4<x+21)){
+  if(player.y+SIZE>FLOOR-26&&track.spikes.some(x=>distance+SIZE-4>x+5&&distance+4<x+21)){
     state='lost';ai=false;sound('miss');refresh();return;
   }
-  if(distance>=FINISH){state='won';ai=false;sound('win');refresh();}
+  if(frameNo>=track.finishFrame){
+    const last=level===levels.length-1;
+    state=last?'won':'clear';transition=65;
+    if(last)ai=false;
+    sound('win');refresh();
+  }
 }
 function draw(){
-  const phase=frameNo%FRAMES;
-  ctx.fillStyle=distance>=32*BEAT?'#452747':distance>=16*BEAT?'#2a335c':'#30264e';
+  const {frames,stride,groups,spikes,finish,color}=stage();
+  const phase=frameNo%frames;
+  ctx.fillStyle=level===0?(distance>=32*stride?'#452747':distance>=16*stride?'#2a335c':color):color;
   ctx.fillRect(0,0,W,H);
   ctx.strokeStyle='#e9c9ff25';ctx.lineWidth=1;
-  for(let x=X-distance%BEAT-BEAT;x<W;x+=BEAT){
+  for(let x=X-distance%stride-stride;x<W;x+=stride){
     ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
   }
   ctx.fillStyle='#17152a';ctx.fillRect(0,FLOOR,W,H-FLOOR);
@@ -131,7 +182,7 @@ function draw(){
     ctx.fillStyle='#ff9b96';ctx.beginPath();ctx.moveTo(x,FLOOR);
     ctx.lineTo(x+13,FLOOR-26);ctx.lineTo(x+26,FLOOR);ctx.fill();
   }
-  const goal=X+FINISH-distance;
+  const goal=X+finish-distance;
   if(goal<W){ctx.fillStyle='#c9ff83';ctx.fillRect(goal,FLOOR-82,6,82);ctx.fillRect(goal,FLOOR-82,39,22);}
   if(state!=='lost'){
     ctx.save();ctx.translate(X+SIZE/2,player.y+SIZE/2);
@@ -146,8 +197,9 @@ document.addEventListener('keydown',event=>{
     event.preventDefault();if(!event.repeat)input();
   }
 });
-get('play').onclick=()=>{reset(false);canvas.focus();};
-get('ai').onclick=()=>{if(ai){ai=false;refresh();}else reset(true);canvas.focus();};
+get('play').onclick=()=>{restart(false);canvas.focus();};
+get('next').onclick=()=>{nextLevel();canvas.focus();};
+get('ai').onclick=()=>{if(ai){ai=false;refresh();}else if(state==='clear'){ai=true;nextLevel();}else restart(true);canvas.focus();};
 get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';refresh();if(state==='playing')canvas.focus();};
 window.addEventListener('blur',()=>{if(state==='playing'){state='paused';refresh();}});
 let previous,elapsed=0;
