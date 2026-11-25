@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Puncak Pantul — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#201a2c;color:#fff0db;font:16px system-ui}main{max-width:690px;margin:auto;padding:clamp(12px,4vw,30px)}a{color:#f8d69a}header{display:flex;justify-content:space-between;align-items:end;gap:10px;margin:12px 0}h1{margin:0;font-size:clamp(29px,7vw,55px);letter-spacing:-.07em;line-height:1}output{text-align:right;color:#f8d69a;font-size:14px}progress{display:block;width:100%;height:9px;margin:0 0 10px;accent-color:#ffc973}.arena{position:relative;border:1px solid #8a6991;border-radius:14px;overflow:hidden;background:#392c49}canvas{display:block;width:100%;height:min(64svh,610px);object-fit:contain;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;background:#1d1529b0;padding:14px;pointer-events:none}.overlay[hidden]{display:none}h2{margin:0;font-size:clamp(22px,6vw,40px)}p{margin:8px 0;color:#e0ccd9;font-size:14px}footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}button{background:#3c2d4a;border:1px solid #8a6991;color:inherit;border-radius:8px;padding:8px 11px;font:inherit;touch-action:none}button[aria-pressed=true]{background:#f8d69a;color:#302338}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #f8d69a;outline-offset:-2px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Puncak Pantul</h1><output id="stats"></output></header>
+<progress id="power" max="40" value="0" aria-label="Tenaga lompat"></progress>
+<div class="arena">
+<canvas width="480" height="540" tabindex="0" aria-label="Menara Puncak Pantul"></canvas>
+<div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
+</div>
+<footer>
+<button id="left" aria-label="Arah kiri">←</button><button id="right" aria-label="Arah kanan">→</button>
+<button id="jump">Tahan lompat</button><button id="play">Mulai</button><button id="ai" aria-pressed="false">Jalankan AI</button>
+<button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Pilih arah dengan ← / →, tahan Spasi atau tombol Lompat untuk mengisi tenaga, lalu lepas. Arah terkunci di udara. Capai bendera di tingkat 18.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const W=480,H=540,R=12,MAX_CHARGE=40,WALK=3.15;
+const platformData=[
+  [16,464,0],[96,238,74],[250,382,156],[128,244,245],[271,379,334],
+  [104,204,433],[240,332,529],[326,417,633],[170,253,737],[56,132,846],
+  [215,289,954],[346,416,1067],[195,261,1176],[66,128,1290],[220,278,1403],
+  [364,418,1520],[190,240,1635],[80,128,1754],[238,284,1876]
+];
+const ledges=platformData.map(([left,right,y])=>({left,right,y}));
+const final=ledges.length-1;
+const districts=['Halaman Lentera','Balkon Angin','Atap Awan'];
+const body={},held=new Map();
+let state,ai,camera,facing,charge,charging,source,record,plan;
+function setAI(mode){
+  ai=mode;plan=null;held.clear();
+  get('ai').textContent=mode?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(mode));
+}
+function refresh(){
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Tahan, bidik, lepas',paused:'Dijeda',won:'Puncak tercapai!'}[state]||'';
+  get('detail').textContent={ready:'18 tingkat dalam satu menara.',won:'Semua pelataran berhasil dilewati.'}[state]||'';
+  get('play').textContent=state==='ready'?'Mulai':'Mulai dari bawah';
+  get('pause').disabled=state!=='paused'&&state!=='playing';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+}
+function reset(mode,initial='playing'){
+  Object.assign(body,{x:166,y:R,vx:0,vy:0,ground:0});
+  state=initial;camera=charge=record=0;facing=1;charging=false;source=null;
+  setAI(mode);refresh();meters();
+}
+function meters(){
+  get('power').value=charge;
+  const section=districts[Math.min(2,Math.floor(Math.max(0,body.y-R)/630))];
+  const stats=section+' · Tingkat '+record+'/'+final;
+  if(get('stats').textContent!==stats)get('stats').textContent=stats;
+}
+function canStand(x,ledge){return x+R*.5>ledge.left&&x-R*.5<ledge.right;}
+function launchMotion(sprite,amount,direction){
+  sprite.ground=-1;
+  sprite.vx=direction*5.25;
+  sprite.vy=5.2+amount*.247;
+}
+function simulate(sprite){
+  const previous=sprite.y;
+  sprite.vy-=.59;
+  sprite.y+=sprite.vy;
+  sprite.x+=sprite.vx;
+  if(sprite.x<R||sprite.x>W-R){
+    sprite.x=Math.max(R,Math.min(W-R,sprite.x));sprite.vx*=-.58;
+  }
+  if(sprite.vy>0)return;
+  for(let i=final;i>=0;i--){
+    const p=ledges[i], landing=p.y+R;
+    if(previous>=landing&&sprite.y<=landing&&(i===0||canStand(sprite.x,p))){
+      sprite.ground=i;sprite.y=landing;sprite.vx=sprite.vy=0;
+      return;
+    }
+  }
+}
+function walk(dir){
+  if(!dir||body.ground<0)return;
+  facing=dir;
+  body.x=Math.max(R,Math.min(W-R,body.x+dir*WALK));
+  if(body.ground>0&&!canStand(body.x,ledges[body.ground]))body.ground=-1;
+}
+function findPlan(){
+  const ground=body.ground,current=ledges[ground],target=ledges[ground+1];
+  let best;
+  for(let offset=-45;offset<=45;offset++){
+    const x=body.x+offset*WALK;
+    if(x<R||x>W-R||x<current.left+2||x>current.right-2)continue;
+    for(const dir of [-1,1]){
+      for(let amount=7;amount<=MAX_CHARGE;amount++){
+        const trial={x,y:body.y,vx:0,vy:0,ground};
+        launchMotion(trial,amount,dir);
+        for(let f=0;f<80&&trial.ground<0;f++)simulate(trial);
+        if(trial.ground!==ground+1)continue;
+        const cost=Math.abs(offset)*2+Math.abs(trial.x-(target.left+target.right)/2)*.4+amount*.13;
+        if(!best||cost<best.cost)best={offset,dir,amount,cost};
+      }
+    }
+  }
+  return best;
+}
+function launch(){
+  if(body.ground<0)return;
+  launchMotion(body,charge,facing);
+  charge=0;charging=false;source=null;plan=null;sound('move');
+}
+function autopilot(){
+  if(!plan)plan=findPlan();
+  if(!plan){setAI(false);return;}
+  if(plan.offset){
+    const dir=Math.sign(plan.offset);walk(dir);plan.offset-=dir;return;
+  }
+  facing=plan.dir;
+  if(++charge>=plan.amount)launch();
+}
+function tick(){
+  if(state!=='playing')return;
+  if(body.ground>=0){
+    if(ai)autopilot();
+    else {
+      const dir=Math.sign([...held.values()].reduce((sum,d)=>sum+d,0));
+      if(charging){if(dir)facing=dir;charge=Math.min(MAX_CHARGE,charge+1);}
+      else walk(dir);
+    }
+  }
+  if(body.ground<0){
+    const falling=body.vy;
+    simulate(body);
+    if(body.ground>=0){
+      if(body.ground>record){record=body.ground;sound('point');}
+      else if(falling<-8)sound('miss');
+      if(body.ground===final){state='won';setAI(false);sound('win');refresh();}
+    }
+  }
+  camera+=(Math.max(0,body.y-155)-camera)*.16;
+  meters();
+}
+function screen(y){return H-40-y+camera;}
+function draw(){
+  const zone=Math.min(2,Math.floor(camera/550));
+  ctx.fillStyle=['#392c49','#3d4263','#554566'][zone];ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#f8d7a9';ctx.beginPath();ctx.arc(397,88,32,0,2*Math.PI);ctx.fill();
+  ctx.strokeStyle='#c8abd34a';ctx.lineWidth=2;
+  for(let x=18;x<W;x+=74){
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
+  }
+  for(const [i,ledge] of ledges.entries()){
+    const y=screen(ledge.y),width=ledge.right-ledge.left;
+    if(y<-35||y>H+30)continue;
+    ctx.fillStyle='#251e37';ctx.fillRect(ledge.left,y,width,15);
+    ctx.fillStyle=i===final?'#fae68d':'#daa977';ctx.fillRect(ledge.left,y,width,4);
+    if(i>0){
+      ctx.font='700 12px system-ui';ctx.fillStyle='#f4d5c3';ctx.fillText(i,ledge.left+4,y+28);
+    }
+    if(i===final){
+      ctx.fillStyle='#fae68d';ctx.fillRect(ledge.right-7,y-48,3,48);ctx.fillRect(ledge.right-7,y-48,37,16);
+    }
+  }
+  const y=screen(body.y);
+  ctx.fillStyle='#b8ecdd';ctx.beginPath();ctx.arc(body.x,y,R,0,2*Math.PI);ctx.fill();
+  ctx.fillStyle='#2c394d';ctx.fillRect(body.x+facing*4-2,y-4,4,5);
+  if(charge>0){
+    ctx.strokeStyle='#ffd082';ctx.lineWidth=3;ctx.beginPath();
+    ctx.arc(body.x,y,17,-Math.PI/2,-Math.PI/2+charge/MAX_CHARGE*Math.PI*2);ctx.stroke();
+  }
+}
+function takeOver(){if(ai){setAI(false);charge=0;}}
+function pressJump(key){
+  if(state!=='playing')return;
+  takeOver();
+  if(body.ground<0||charging)return;
+  charging=true;source=key;charge=0;
+}
+function releaseJump(key){
+  if(!charging||source!==key)return;
+  if(state==='playing')launch();
+  else {charging=false;source=null;charge=0;}
+}
+function cancelInput(){held.clear();charging=false;charge=0;source=null;}
+const directions={ArrowLeft:-1,ArrowRight:1,KeyA:-1,KeyD:1};
+document.addEventListener('keydown',e=>{
+  if(directions[e.code]){e.preventDefault();takeOver();held.set(e.code,directions[e.code]);}
+  else if(e.code==='Space'&&(e.target===get('jump')||!e.target.closest('button,a'))){
+    e.preventDefault();if(!e.repeat)pressJump(e.code);
+  }
+});
+document.addEventListener('keyup',e=>{held.delete(e.code);releaseJump(e.code);});
+for(const [id,dir] of [['left',-1],['right',1]]){
+  const button=get(id);
+  button.addEventListener('pointerdown',e=>{
+    takeOver();button.setPointerCapture(e.pointerId);held.set(e.pointerId,dir);
+    if(body.ground>=0)facing=dir;
+  });
+  button.addEventListener('lostpointercapture',e=>held.delete(e.pointerId));
+}
+get('jump').addEventListener('pointerdown',e=>{
+  e.preventDefault();get('jump').setPointerCapture(e.pointerId);pressJump(e.pointerId);
+});
+get('jump').addEventListener('pointerup',e=>releaseJump(e.pointerId));
+get('jump').addEventListener('lostpointercapture',e=>{
+  if(source===e.pointerId){charging=false;source=null;charge=0;}
+});
+get('play').onclick=()=>{reset(false);canvas.focus();};
+get('ai').onclick=()=>{if(ai)takeOver();else reset(true);canvas.focus();};
+get('pause').onclick=()=>{
+  cancelInput();state=state==='paused'?'playing':'paused';refresh();if(state==='playing')canvas.focus();
+};
+window.addEventListener('blur',()=>{cancelInput();if(state==='playing'){state='paused';refresh();}});
+let previous,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(previous??now));previous=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+reset(false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
