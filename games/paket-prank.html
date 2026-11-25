@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paket Prank — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#162b36;color:#fff6df;font:16px system-ui}main{max-width:860px;margin:auto;padding:clamp(12px,4vw,30px)}a{color:#fcdd8d}header{display:flex;justify-content:space-between;align-items:end;gap:10px;margin:14px 0}h1{margin:0;font-size:clamp(28px,7vw,58px);line-height:1;letter-spacing:-.06em}output{text-align:right;color:#fcdd8d;font-size:14px}.arena{position:relative}.arena canvas{display:block;width:100%;aspect-ratio:2/1;border:1px solid #60818f;border-radius:14px;background:#b5e1e1;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:10px;border-radius:14px;background:#17333cc4;pointer-events:none}.overlay[hidden],[hidden]{display:none}h2{margin:0;font-size:clamp(22px,6vw,40px)}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{background:#294550;color:inherit;border:1px solid #78959b;border-radius:8px;padding:8px 12px;font:inherit;touch-action:none}button[aria-pressed=true]{background:#fcdd8d;color:#332a16}button:disabled{opacity:.46}button:focus-visible,canvas:focus-visible{outline:2px solid #fcdd8d;outline-offset:2px}p{color:#d7e4de;margin:8px 0;font-size:14px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Paket Prank</h1><output id="stats"></output></header>
+<div class="arena">
+<canvas width="800" height="400" tabindex="0" aria-label="Lintasan kurir. Gunakan panah kiri atau kanan dan Spasi untuk melompat."></canvas>
+<div id="overlay" class="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
+</div>
+<footer>
+<button id="left" aria-label="Ke kiri">←</button><button id="right" aria-label="Ke kanan">→</button><button id="jump">Lompat</button>
+<button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button>
+<button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Antar paket ke kotak surat biru. Gunakan ← / → dan Spasi, atau tombol layar di HP. Waspadai genangan, pot, dan kotak surat tiruan.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const FLOOR=310, WIDTH=26, HEIGHT=30, SPEED=5.2, EXIT=754;
+const puddle=(x,w)=>({type:'puddle',x,w});
+const pot=(x,w=41)=>({type:'pot',x,w});
+const mail=(x)=>({type:'mail',x,w:43});
+const awning=(x,w=42)=>({type:'awning',x,w});
+const levels=[
+  ['Kompleks Ceria',pot(345)],
+  ['Genangan Rapi',puddle(308,91),pot(552)],
+  ['Alamat Ganda',pot(236),mail(580)],
+  ['Gang Teduh',awning(145),puddle(286,99),awning(532),pot(640)],
+  ['Tanaman Tetangga',pot(169),pot(375,53),pot(583,61)],
+  ['Jembatan Cat',puddle(157,115),puddle(363,112),mail(605)],
+  ['Teras Berisik',awning(128),pot(240,62),mail(438),puddle(643,85)],
+  ['Kompleks Kembar',mail(171),mail(376),mail(577)],
+  ['Jalan Memutar',puddle(164,122),pot(372,65),awning(548),mail(636)],
+  ['Jam Pulang',pot(151,71),awning(337),puddle(443,121),pot(662,66)],
+  ['Alamat Terakhir',mail(163),puddle(363,125),mail(585),awning(710)],
+  ['Paket Kilat',pot(152,76),puddle(350,134),mail(549),pot(747,18)]
+];
+const player={}, held=new Map();
+let level=0, misses=0, ai=false, state, reason, remaining, traps;
+const stage=()=>levels[level];
+function refresh(){
+  const name=stage()[0];
+  get('stats').textContent='Level '+(level+1)+' / '+levels.length+' · Gagal '+misses;
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Siap antar paket?',paused:'Dijeda',lost:reason,clear:'Paket sampai!',won:'Semua paket terkirim!'}[state]||'';
+  get('detail').textContent={ready:'Pilih Mulai atau Jalankan AI.',lost:'Tekan Ulangi level untuk mencoba lagi.',
+    clear:ai?'AI akan lanjut otomatis.':'Berikutnya ada alamat baru.',won:levels.length+' alamat selesai.'}[state]||'';
+  get('play').textContent=state==='ready'?'Mulai':state==='won'?'Main lagi':'Ulangi level';
+  get('next').hidden=state!=='clear';
+  get('pause').disabled=state!=='playing'&&state!=='paused';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+  canvas.setAttribute('aria-label','Lintasan '+name+'. Gunakan panah kiri atau kanan dan Spasi.');
+}
+function start(index,mode,initial='playing'){
+  level=index;ai=mode;state=initial;reason='';remaining=0;held.clear();
+  traps=stage().slice(1).map(trap=>({...trap,age:0}));
+  Object.assign(player,{x:50,y:FLOOR-HEIGHT,vy:0,grounded:true});
+  refresh();
+}
+function next(){if(state==='clear')start(level+1,ai);}
+function restart(mode){if(state==='won'){misses=0;start(0,mode);}else start(level,mode);}
+function takeOver(){if(ai){ai=false;refresh();}}
+function jump(){
+  if(state!=='playing'||!player.grounded)return;
+  player.vy=-12.7;player.grounded=false;sound('move');
+}
+function fail(message){
+  reason=message;state='lost';ai=false;held.clear();misses++;sound('miss');refresh();
+}
+function deliver(){
+  state=level+1===levels.length?'won':'clear';remaining=55;
+  if(state==='won')ai=false;
+  held.clear();sound('win');refresh();
+}
+function blockY(trap){return Math.min(FLOOR-36,61+Math.max(0,trap.age-16)*10);}
+function tick(){
+  if(state==='clear'&&ai&&--remaining<=0){next();return;}
+  if(state!=='playing')return;
+  if(ai&&traps.some(trap=>trap.type!=='awning'&&trap.x-player.x>=33&&trap.x-player.x<=46))jump();
+  const dir=ai?1:Math.sign([...held.values()].reduce((sum,value)=>sum+value,0));
+  player.x=Math.max(0,Math.min(800-WIDTH,player.x+dir*SPEED));
+  const before=player.y;
+  player.vy+=.66;player.y+=player.vy;player.grounded=false;
+  let hole=false;
+  for(const trap of traps){
+    if(trap.age||(player.x+WIDTH>=trap.x-40&&player.x<trap.x+trap.w))trap.age++;
+    const overlap=player.x+WIDTH>trap.x&&player.x<trap.x+trap.w;
+    if(trap.type==='puddle'&&trap.age>=6&&player.x+WIDTH/2>trap.x&&player.x+WIDTH/2<trap.x+trap.w)hole=true;
+    if(!overlap)continue;
+    const foot=player.y+HEIGHT;
+    if(trap.type==='pot'&&trap.age>=6&&foot>FLOOR-27)return fail('Potnya menyergap!');
+    if(trap.type==='mail'&&foot>FLOOR-30)return fail('Kotak surat itu palsu!');
+    if(trap.type==='awning'&&trap.age>16&&foot>blockY(trap)&&player.y<blockY(trap)+36)return fail('Tenda roboh!');
+  }
+  if(!hole&&before+HEIGHT<=FLOOR&&player.y+HEIGHT>=FLOOR){
+    player.y=FLOOR-HEIGHT;player.vy=0;player.grounded=true;
+  }
+  if(player.y>415)return fail('Genangannya ternyata jurang!');
+  if(player.x>=EXIT&&player.grounded)deliver();
+}
+function circle(x,y,r,color){
+  ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+}
+function mailbox(x,color){
+  ctx.fillStyle='#695b51';ctx.fillRect(x+12,FLOOR-23,6,23);
+  ctx.fillStyle=color;ctx.fillRect(x,FLOOR-37,29,20);
+  ctx.fillStyle='#254757';ctx.fillRect(x+6,FLOOR-31,15,3);
+}
+function draw(){
+  ctx.fillStyle=['#b9e4dd','#f1d9ac','#cbd9ef'][Math.floor(level/4)];ctx.fillRect(0,0,800,400);
+  circle(667,81,39,'#fff0ab');
+  for(let i=0;i<6;i++){
+    const x=i*150+16;
+    ctx.fillStyle='#fff8df';ctx.fillRect(x,206,92,104);
+    ctx.fillStyle=i%2?'#dc977e':'#8c9fab';ctx.beginPath();
+    ctx.moveTo(x-10,207);ctx.lineTo(x+46,164);ctx.lineTo(x+102,207);ctx.fill();
+    ctx.fillStyle='#a1c9d4';ctx.fillRect(x+15,224,20,25);ctx.fillRect(x+56,224,20,25);
+  }
+  ctx.fillStyle='#83644d';ctx.fillRect(0,FLOOR,800,90);
+  ctx.fillStyle='#668a66';ctx.fillRect(0,FLOOR,800,7);
+  mailbox(EXIT+8,'#72d7ef');
+  for(const trap of traps){
+    const {x,w,age,type}=trap;
+    if(type==='puddle'){
+      ctx.fillStyle=age>=6?'#443747':'#8cd1d4';
+      ctx.fillRect(x,FLOOR,w,age>=6?90:6);
+    }else if(type==='pot'){
+      ctx.fillStyle='#b56553';ctx.fillRect(x+3,FLOOR-12,w-6,12);
+      if(age>=6){ctx.fillStyle='#42694c';ctx.fillRect(x,FLOOR-27,w,15);}
+    }else if(type==='mail'){
+      mailbox(x+7,'#df9986');
+    }else{
+      const y=blockY(trap);
+      ctx.fillStyle='#c47670';ctx.fillRect(x,y,w,36);
+      ctx.fillStyle='#f7d4ae';
+      for(let j=4;j<w-4;j+=11)ctx.fillRect(x+j,y,5,11);
+    }
+  }
+  if(state!=='lost'){
+    const {x,y}=player;
+    ctx.fillStyle='#2c586b';ctx.fillRect(x+4,y+11,19,19);
+    circle(x+13,y+9,8,'#ffdfaa');
+    ctx.fillStyle='#ba6952';ctx.fillRect(x+6,y+1,17,5);
+    ctx.fillStyle='#e9ab62';ctx.fillRect(x+16,y+15,13,11);
+  }
+  ctx.fillStyle='#29434e';ctx.font='700 16px system-ui';ctx.fillText(stage()[0],17,30);
+}
+const directions={ArrowLeft:-1,ArrowRight:1,KeyA:-1,KeyD:1};
+for(const [id,dir] of [['left',-1],['right',1]]){
+  const button=get(id);
+  button.addEventListener('pointerdown',e=>{
+    takeOver();button.setPointerCapture(e.pointerId);held.set(e.pointerId,dir);
+  });
+  button.addEventListener('lostpointercapture',e=>held.delete(e.pointerId));
+}
+document.addEventListener('keydown',e=>{
+  if(directions[e.code]){e.preventDefault();takeOver();held.set(e.code,directions[e.code]);}
+  else if((e.code==='Space'||e.code==='ArrowUp')&&!e.target.closest('a,button')){
+    e.preventDefault();if(!e.repeat){takeOver();jump();}
+  }
+});
+document.addEventListener('keyup',e=>held.delete(e.code));
+window.addEventListener('blur',()=>{held.clear();if(state==='playing'){state='paused';refresh();}});
+get('jump').onclick=()=>{takeOver();jump();canvas.focus();};
+get('play').onclick=()=>{restart(false);canvas.focus();};
+get('next').onclick=()=>{next();canvas.focus();};
+get('ai').onclick=()=>{
+  if(ai)takeOver();else if(state==='clear'){ai=true;next();}else restart(true);
+  canvas.focus();
+};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';held.clear();refresh();if(state==='playing')canvas.focus();};
+let previous,elapsed=0;
+function frame(time){
+  elapsed+=Math.min(65,time-(previous??time));previous=time;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+start(0,false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
