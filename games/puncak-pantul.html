@@ -17,9 +17,9 @@
 <footer>
 <button id="left" aria-label="Arah kiri">←</button><button id="right" aria-label="Arah kanan">→</button>
 <button id="jump">Tahan lompat</button><button id="play">Mulai</button><button id="ai" aria-pressed="false">Jalankan AI</button>
-<button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+<button id="pause">Jeda</button><button id="notes" aria-pressed="true">Nada: ON</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
 </footer>
-<p>Pilih arah dengan ← / →, tahan Spasi atau tombol Lompat untuk mengisi tenaga, lalu lepas. Arah terkunci di udara. Capai bendera di tingkat 18.</p>
+<p>Pilih arah dengan ← / →, tahan Spasi atau tombol Lompat untuk mengisi tenaga, lalu lepas. Arah terkunci di udara. Setiap pelataran punya nada. Naikkan melodi sampai bendera di tingkat 18.</p>
 </main>
 <script src="annoying-sound.js"></script>
 <script>
@@ -34,7 +34,42 @@ const platformData=[
   [215,289,954],[346,416,1067],[195,261,1176],[66,128,1290],[220,278,1403],
   [364,418,1520],[190,240,1635],[80,128,1754],[238,284,1876]
 ];
-const ledges=platformData.map(([left,right,y])=>({left,right,y}));
+const scale=[0,2,4,5,7,9,11], names=['C','D','E','F','G','A','B'];
+const ledges=platformData.map(([left,right,y],index)=>{
+  const degree=index%scale.length, octave=Math.floor(index/scale.length);
+  return {left,right,y,note:names[degree]+(3+octave),hz:130.8128*2**((scale[degree]+12*octave)/12)};
+});
+const NoteAudio=window.AudioContext||window.webkitAudioContext;
+let noteAudio, notesOn=Boolean(NoteAudio);
+function showNotes(){
+  get('notes').textContent=NoteAudio?'Nada: '+(notesOn?'ON':'OFF'):'Nada tidak tersedia';
+  get('notes').setAttribute('aria-pressed',String(notesOn));
+}
+async function unlockNotes(){
+  if(!notesOn)return;
+  try {
+    noteAudio??=new NoteAudio();
+    if(noteAudio.state!=='running')await noteAudio.resume();
+  } catch { notesOn=false;showNotes(); }
+}
+function playNote(ledge){
+  if(!notesOn||noteAudio?.state!=='running')return;
+  const start=noteAudio.currentTime;
+  const tone=noteAudio.createOscillator(), envelope=noteAudio.createGain();
+  tone.type='triangle';tone.frequency.value=ledge.hz;
+  envelope.gain.setValueAtTime(.0001,start);
+  envelope.gain.exponentialRampToValueAtTime(.14,start+.012);
+  envelope.gain.exponentialRampToValueAtTime(.0001,start+.29);
+  tone.connect(envelope).connect(noteAudio.destination);
+  tone.start(start);tone.stop(start+.3);
+}
+get('notes').disabled=!NoteAudio;
+showNotes();
+get('notes').onclick=async()=>{
+  notesOn=!notesOn;showNotes();
+  await unlockNotes();
+  if(body.ground>=0)playNote(ledges[body.ground]);
+};
 const final=ledges.length-1;
 const districts=['Halaman Lentera','Balkon Angin','Atap Awan'];
 const body={},held=new Map();
@@ -60,7 +95,8 @@ function reset(mode,initial='playing'){
 function meters(){
   get('power').value=charge;
   const section=districts[Math.min(2,Math.floor(Math.max(0,body.y-R)/630))];
-  const stats=section+' · Tingkat '+record+'/'+final;
+  const note=body.ground>=0?' · '+ledges[body.ground].note:'';
+  const stats=section+' · Tingkat '+record+'/'+final+note;
   if(get('stats').textContent!==stats)get('stats').textContent=stats;
 }
 function canStand(x,ledge){return x+R*.5>ledge.left&&x-R*.5<ledge.right;}
@@ -139,6 +175,7 @@ function tick(){
     const falling=body.vy;
     simulate(body);
     if(body.ground>=0){
+      playNote(ledges[body.ground]);
       if(body.ground>record){record=body.ground;sound('point');}
       else if(falling<-8)sound('miss');
       if(body.ground===final){state='won';setAI(false);sound('win');refresh();}
@@ -161,9 +198,8 @@ function draw(){
     if(y<-35||y>H+30)continue;
     ctx.fillStyle='#251e37';ctx.fillRect(ledge.left,y,width,15);
     ctx.fillStyle=i===final?'#fae68d':'#daa977';ctx.fillRect(ledge.left,y,width,4);
-    if(i>0){
-      ctx.font='700 12px system-ui';ctx.fillStyle='#f4d5c3';ctx.fillText(i,ledge.left+4,y+28);
-    }
+    ctx.font='700 12px system-ui';ctx.fillStyle='#f4d5c3';
+    ctx.fillText(ledge.note,ledge.left+4,y+28);
     if(i===final){
       ctx.fillStyle='#fae68d';ctx.fillRect(ledge.right-7,y-48,3,48);ctx.fillRect(ledge.right-7,y-48,37,16);
     }
@@ -212,10 +248,10 @@ get('jump').addEventListener('pointerup',e=>releaseJump(e.pointerId));
 get('jump').addEventListener('lostpointercapture',e=>{
   if(source===e.pointerId){charging=false;source=null;charge=0;}
 });
-get('play').onclick=()=>{reset(false);canvas.focus();};
-get('ai').onclick=()=>{if(ai)takeOver();else reset(true);canvas.focus();};
+get('play').onclick=()=>{reset(false);canvas.focus();void unlockNotes();};
+get('ai').onclick=()=>{if(ai)takeOver();else reset(true);canvas.focus();void unlockNotes();};
 get('pause').onclick=()=>{
-  cancelInput();state=state==='paused'?'playing':'paused';refresh();if(state==='playing')canvas.focus();
+  cancelInput();state=state==='paused'?'playing':'paused';refresh();if(state==='playing'){canvas.focus();void unlockNotes();}
 };
 window.addEventListener('blur',()=>{cancelInput();if(state==='playing'){state='paused';refresh();}});
 let previous,elapsed=0;
