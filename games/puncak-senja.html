@@ -4,46 +4,57 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Puncak Senja — Gabut</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#211923;color:#fff3e6;font:16px system-ui}main{max-width:760px;margin:auto;padding:20px}a{color:#ffd69e}header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}h1{font-size:clamp(28px,6vw,52px);letter-spacing:-.06em;margin:0}output{color:#ffd69e;text-align:right}canvas{width:100%;height:min(62svh,560px);display:block;touch-action:none;border:1px solid #b88378;border-radius:16px}footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}button{background:#3b2935;color:#fff3e6;border:1px solid #ad7989;border-radius:8px;padding:8px 13px;font:inherit;touch-action:none}p{color:#e8c7bc;font-size:14px;margin:9px 0}#message{color:#ffe0a1;min-height:20px}
+*{box-sizing:border-box}body{margin:0;background:#211923;color:#fff3e6;font:16px system-ui}main{max-width:760px;margin:auto;padding:20px}a{color:#ffd69e}header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}h1{font-size:clamp(28px,6vw,52px);letter-spacing:-.06em;margin:0}output{color:#ffd69e;text-align:right}canvas{width:100%;height:min(62svh,560px);display:block;touch-action:none;border:1px solid #b88378;border-radius:16px}select{color:#fff3e6;background:#3b2935;border:1px solid #ad7989;border-radius:8px;padding:8px;font:inherit}footer{align-items:center;display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}button{background:#3b2935;color:#fff3e6;border:1px solid #ad7989;border-radius:8px;padding:8px 13px;font:inherit;touch-action:none}p{color:#e8c7bc;font-size:14px;margin:9px 0}#message{color:#ffe0a1;min-height:20px}
 </style>
 <main>
 <a href="../index.html">← Kembali ke Gabut</a>
 <header><h1>Puncak Senja</h1><output id="height">0 m</output></header>
 <canvas tabindex="0" aria-label="Arena robot panjat. Gunakan Spasi dan panah kiri atau kanan."></canvas>
-<footer><button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="hook">Kaitkan tali</button><button id="higher">Kait lebih tinggi</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="reset">Ulangi</button></footer>
-<p>Klik atau sentuh cincin emas untuk mengait. Spasi mengait ke cincin tertinggi dalam jangkauan atau melepas tali. Tekan ↑ untuk pindah ke cincin lebih tinggi. Tahan ← / → untuk mengayun. Capai pelataran berbendera.</p>
+<footer><button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="hook">Kaitkan tali</button><button id="higher">Kait lebih tinggi</button><label for="route">Rute AI</label><select id="route"><option value="valley">Lembah</option><option value="ridge">Punggung tebing</option></select><button id="ai" aria-pressed="false">Jalankan AI</button><button id="reset">Ulangi</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button></footer>
+<p>Klik atau sentuh cincin emas untuk mengait. Spasi mengait ke cincin tertinggi dalam jangkauan atau melepas tali. Tekan ↑ untuk pindah ke cincin lebih tinggi. Tahan ← / → untuk mengayun. Di percabangan, pilih cincin hijau untuk rute Lembah atau cincin jingga untuk Punggung Tebing. Kedua rute bertemu lagi menuju bendera.</p>
 <p id="message" role="status"></p>
 </main>
+<script src="annoying-sound.js"></script>
 <script>
 'use strict';
+const sound = typeof bindAnnoyingSound === 'function' ? bindAnnoyingSound(document.getElementById('sound')) : () => {};
 const get = id => document.getElementById(id);
 const canvas = document.querySelector('canvas');
 const ctx = canvas.getContext('2d');
-const WIDTH = 520, REACH = 270, R = 15, SUMMIT = 1460;
-const anchors = [[239,150],[356,290],[212,432],[105,576],[260,720],[404,860],[276,1000],[130,1138],[275,1320],[367,1530]].map(([x,y])=>({x,y}));
-const ledges = [[0,520,0],[331,465,215],[63,184,485],[360,483,785],[70,188,1060],[316,493,SUMMIT]];
+const WIDTH = 520, REACH = 270, R = 15, SUMMIT = 2390;
+const toAnchors = (pairs, color) => pairs.map(([x,y]) => ({x,y,color}));
+const base = toAnchors([[239,150],[356,290],[212,432],[105,576],[260,720],[404,860],[276,1000],[130,1138],[275,1320],[367,1530]]);
+const valley = toAnchors([[210,1680],[127,1830],[211,1980]], "#8be3d2");
+const ridge = toAnchors([[450,1680],[398,1830],[413,1980]], "#ffbf91");
+const upper = toAnchors([[307,2140],[223,2290],[359,2460]]);
+const anchors = [...base,...valley,...ridge,...upper];
+const ledges = [[0,520,0],[331,465,215],[63,184,485],[360,483,785],[70,188,1060],[316,493,1460],[81,203,1760],[362,489,1760],[176,305,2210],[290,493,SUMMIT]];
 const player = {x:160,y:R,vx:0,vy:0};
 const held = new Set();
+let aiRoute = [];
 let ai = false, aiAnchor = 0, aiTicks = 0;
 let rope, won=false, peak=0, camera=0, scale=1, height=430;
 const distance = point => Math.hypot(point.x-player.x,point.y-player.y);
 function target() {
-  return anchors.filter(point=>point.y>player.y+18 && distance(point)<=REACH).at(-1);
+  return anchors.reduce((best, point) => point.y > (best?.y ?? player.y+18) && distance(point)<=REACH ? point : best, undefined);
 }
 function showHook() { get('hook').textContent = rope ? 'Lepas tali' : 'Kaitkan tali'; }
 function attach(point) {
   if (won) return;
   if (!point || distance(point)>REACH) {
+    sound('miss');
     get('message').textContent='Cincin di luar jangkauan.';
     return;
   }
   rope={point,length:distance(point)};
+  sound('point');
   get('message').textContent='';
   showHook();
 }
 function toggle() {
   if (won) return;
   if (!rope) return attach(target());
+  sound('move');
   player.vy=Math.max(6.6,player.vy);
   rope=null;
   showHook();
@@ -62,11 +73,11 @@ function reset() {
 }
 function pilot() {
   if (aiTicks > 0) { aiTicks--; return; }
-  const point = anchors[aiAnchor];
+  const point = aiRoute[aiAnchor];
   if (point) {
     attach(point);
     aiAnchor++;
-    aiTicks=119;
+    aiTicks=159;
   } else if (rope) {
     toggle();
   }
@@ -95,10 +106,12 @@ function tick() {
   for (const [left,right,y] of ledges) {
     const top=y+R;
     if (oldY>=top && player.y<=top && player.x>left && player.x<right) {
+      if (player.vy < -5) sound("miss");
       player.y=top; player.vy=0;
       if (y===SUMMIT) {
         won=true; rope=null; showHook();
         if (ai) stopAI();
+        sound('win');
         get('message').textContent='Sampai di puncak!';
       }
     }
@@ -140,7 +153,7 @@ function draw() {
   }
   const suggested=target();
   for (const point of anchors) {
-    circle(point.x,screenY(point.y),point===suggested?12:9,distance(point)<=REACH?'#ffdf8b':'#cc9381');
+    circle(point.x,screenY(point.y),point===suggested?12:9,distance(point)<=REACH?(point.color ?? '#ffdf8b'):'#cc9381');
     circle(point.x,screenY(point.y),4,'#70455b');
   }
   const flag=screenY(SUMMIT);
@@ -167,8 +180,9 @@ canvas.addEventListener('pointerdown',event=>{
 });
 const directions={ArrowLeft:'left',ArrowRight:'right',KeyA:'left',KeyD:'right'};
 document.addEventListener('keydown',event=>{
+  if (event.target.closest('select')) return;
   const side=directions[event.code];
-  if (side || event.code==='ArrowUp' || (event.code==='Space' && !event.target.closest('button,a'))) stopAI();
+  if (side || event.code==='ArrowUp' || (event.code==='Space' && !event.target.closest('button,a,select'))) stopAI();
   if (event.code==='ArrowUp') {
     event.preventDefault();
     if (!event.repeat) attach(target());
@@ -194,6 +208,7 @@ get('higher').onclick=()=>{stopAI();attach(target());canvas.focus();};
 get('ai').onclick=()=>{
   if (ai) { stopAI(); return; }
   reset();
+  aiRoute=[...base,...(get("route").value==="ridge"?ridge:valley),...upper];
   ai=true; aiAnchor=0; aiTicks=0;
   get('ai').setAttribute('aria-pressed','true');
   get('ai').textContent='Hentikan AI';
