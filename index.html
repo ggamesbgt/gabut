@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14121e">
+<title>Gabut — Pilih Game</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100svh; background: #14121e; color: #faf6ff; font: 16px system-ui, sans-serif; }
+main { max-width: 960px; margin: auto; padding: clamp(24px, 7vw, 84px); }
+h1 { margin: 0; font-size: clamp(64px, 15vw, 144px); font-weight: 900; line-height: .95; letter-spacing: -.09em; color: #f6c9ff; }
+.intro { margin: 16px 0 36px; color: #dfd0e7; font-size: 19px; }
+.games { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: 22px; }
+.card { max-width: 460px; display: block; overflow: hidden; border-radius: 22px; background: #211c2c; border: 1px solid #554364; color: inherit; text-decoration: none; transition: border-color .18s, transform .18s; }
+.card:hover { border-color: #f6c9ff; transform: translateY(-3px); }
+.card:focus-visible { outline: 3px solid #f6c9ff; outline-offset: 5px; }
+.art { position: relative; height: clamp(130px, 28vw, 225px); overflow: hidden; background: radial-gradient(circle at 76% 34%, #d0fff0 0 9%, transparent 9.4%), linear-gradient(#14243d, #35626a); }
+.art::before, .art::after { content: ""; position: absolute; inset: 0; }
+.art::before { background: #233e50; clip-path: polygon(0 75%, 19% 45%, 32% 67%, 51% 30%, 69% 68%, 83% 54%, 100% 73%, 100% 100%, 0 100%); }
+.art::after { background: #182d40; clip-path: polygon(0 82%, 17% 66%, 40% 91%, 62% 68%, 86% 86%, 100% 65%, 100% 100%, 0 100%); }
+.drone { position: absolute; z-index: 1; left: 37%; top: 40%; width: 46px; height: 24px; border-radius: 12px; background: #9bf7dd; transform: rotate(-10deg); }
+.drone::before { content: ""; position: absolute; right: 8px; top: 6px; width: 14px; height: 12px; border-radius: 4px; background: #254c63; }
+.drone::after { content: ""; position: absolute; right: 100%; top: 7px; width: 25px; height: 10px; background: linear-gradient(90deg, transparent, #ffaf82); clip-path: polygon(0 50%, 100% 0, 100% 100%); }
+.info { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; }
+h2 { margin: 0 0 4px; font-size: 25px; }
+.info p { color: #dfd0e7; margin: 0; font-size: 14px; }
+.play { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 10px; background: #f6c9ff; color: #26172c; font-size: 14px; font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gabut</h1>
+  <p class="intro">Pilih game dan langsung main.</p>
+  <div class="games">
+    <a class="card" href="games/arus-malam.html" aria-label="Mainkan Arus Malam">
+      <div class="art" aria-hidden="true"><span class="drone"></span></div>
+      <div class="info">
+        <div><h2>Arus Malam</h2><p>Terbang sendiri atau saksikan AI.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+  </div>
+</main>
+</body>
+</html>
