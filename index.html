@@ -66,6 +66,8 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .tower::before { background:#dab288; clip-path:polygon(8% 78%,32% 78%,32% 81%,8% 81%,8% 78%,42% 59%,70% 59%,70% 62%,42% 62%,42% 59%,65% 32%,88% 32%,88% 35%,65% 35%); }
 .tower::after { inset:15% auto auto 73%; width:29px; height:22px; background:#fae68d; clip-path:polygon(0 0,100% 30%,8% 62%,8% 100%,0 100%); }
 .tower-jumper { position:absolute; left:48%; top:43%; border-radius:50%; width:20px;height:20px; background:#b8ecdd; }
+.tower-tilt { background:linear-gradient(#434574,#794e64); }
+.tower-tilt::before { transform:rotate(11deg); }
 </style>
 </head>
 <body>
@@ -133,6 +135,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art tower" aria-hidden="true"><span class="tower-jumper"></span></div>
       <div class="info">
         <div><h2>Puncak Pantul</h2><p>Atur tenaga lompatan dan taklukkan 18 tingkat menara.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/puncak-pantul-2.html" aria-label="Mainkan Puncak Pantul 2">
+      <div class="art tower tower-tilt" aria-hidden="true"><span class="tower-jumper"></span></div>
+      <div class="info">
+        <div><h2>Puncak Pantul 2</h2><p>Lompat lagi sebelum bola meluncur dari pelataran.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
