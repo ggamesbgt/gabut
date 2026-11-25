@@ -56,13 +56,50 @@ const levels=[
     [18,3],[19,3],[20,2],[22,3],[23,3],[25,3],[26,3],[27,3],[29,3],[30,2],
     [31,3],[32,3],[34,3],[35,3],[36,3],[38,3],[39,3],[40,2],[41,3],[43,3],[44,3],
     [45,3],[46,3],[48,3],[49,3],[50,3],[51,3],[52,3]
+  ]),
+  makeLevel('Lintasan Kilat',27,7.3,54,'#283b5b',[
+    [2,3],[3,2],[4.5,3],[6,3],[7,3],[9,3],[10,3],[11,2],[12.5,3],[14,3],[15,3],
+    [17,3],[18,2],[19,3],[21,3],[22,3],[23.5,3],[25,3],[26,3],[27,2],[28,3],
+    [30,3],[31.5,3],[33,3],[34,3],[35,3],[37,2],[38,3],[39.5,3],[41,3],[42,3],
+    [43,3],[45,3],[46,3],[47,3],[48.5,3],[50,3],[51,3],[52,3]
+  ]),
+  makeLevel('Sirkuit Bara',26,7.7,56,'#59303c',[
+    [2,3],[3,3],[5,4],[7,3],[8,3],[9.5,4],[11,3],[12,3],[14,4],[15.5,3],[17,3],
+    [18,3],[19,4],[21,3],[22.5,3],[24,4],[26,4],[27,3],[28,3],[30,4],[31.5,3],
+    [33,4],[35,3],[36,3],[37.5,4],[39,3],[40,4],[42,3],[43,3],[44.5,4],
+    [46,4],[47,3],[48,3],[50,4],[51,4],[52,3],[53,4],[54,4]
+  ]),
+  makeLevel('Sinkop Neon',25,8,58,'#333260',[
+    [2,4],[3.5,3],[5,4],[6.5,3],[8,4],[9,3],[10.5,4],[12,3],[13.5,4],[15,3],
+    [16,4],[17.5,4],[19,3],[20,4],[21.5,3],[23,4],[24,3],[25.5,4],[27,4],[28,3],
+    [29.5,4],[31,4],[32,3],[33.5,4],[35,4],[36.5,3],[38,4],[39,4],[40.5,3],
+    [42,4],[43,3],[44.5,4],[46,4],[47.5,3],[49,4],[50,4],[51,3],[52.5,4],[54,4],[55,3],[56,4]
+  ]),
+  makeLevel('Garis Kritis',24,8.4,60,'#56324a',[
+    [2,4],[3,3],[4,4],[5.5,4],[7,4],[8,3],[9,4],[10,4],[11.5,4],[13,4],[14,4],
+    [15,3],[16,4],[17.5,4],[19,4],[20,4],[21,3],[22,4],[23.5,4],[25,4],[26,4],
+    [27,4],[29,4],[30,4],[31.5,4],[33,4],[34,4],[35,4],[36,3],[37.5,4],[39,4],
+    [40,4],[41,4],[42,4],[43.5,4],[45,4],[46,3],[47,4],[48,4],[49,4],[51,4],
+    [52,4],[53,4],[54.5,4],[56,4],[57,4],[58,4]
+  ]),
+  makeLevel('Final Tanpa Rem',23,8.8,64,'#48284c',[
+    [2,4],[3,4],[4,4],[5,4],[6.5,4],[8,4],[9,4],[10,4],[11,4],[12,4],[13.5,4],
+    [15,4],[16,4],[17,4],[18,4],[19,4],[20.5,4],[22,4],[23,4],[24,4],[25,4],[26,4],
+    [27.5,4],[29,4],[30,4],[31,4],[32,4],[33,4],[34,4],[35.5,4],[37,4],[38,4],
+    [39,4],[40,4],[41,4],[42,4],[43.5,4],[45,4],[46,4],[47,4],[48,4],[49,4],[50,4],
+    [51,4],[52.5,4],[54,4],[55,4],[56,4],[57,4],[58,4],[59,4],[60,4],[61,4],[62,4]
   ])
 ];
 function makeLevel(name,frames,pace,beats,color,pattern){
   const stride=pace*frames;
-  const groups=pattern.map(([beat,count])=>({frame:beat*frames,cue:beat*stride,start:beat*stride+54,count}));
+  const timing=Math.max(1,28/frames);
+  const spikeHeight=frames<28?28+(28-frames):26;
+  const groups=pattern.map(([beat,count])=>{
+    const frame=Math.round(beat*frames),cue=frame*pace;
+    return {frame,cue,start:cue+(frames<28?44:54),count};
+  });
   const spikes=groups.flatMap(({start,count})=>Array.from({length:count},(_,i)=>start+i*26));
-  return {name,frames,pace,stride,finishFrame:frames*beats,finish:stride*beats,color,groups,spikes,
+  return {name,frames,pace,stride,finishFrame:frames*beats,finish:stride*beats,color,groups,spikes,spikeHeight,gravity:.9*timing**2,boost:12.8*timing,
     jumpFrames:new Set(groups.map(group=>group.frame))};
 }
 let level=0,transition=0;
@@ -112,7 +149,7 @@ function refresh(){
   get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
   get('ai').setAttribute('aria-pressed',String(ai));
   get('overlay').hidden=state==='playing';
-  get('status').textContent={ready:'Ketuk untuk mulai',paused:'Dijeda',lost:'Terhenti di '+percent+'%',clear:'Level selesai!',won:'Lima level selesai!'}[state]||'';
+  get('status').textContent={ready:'Ketuk untuk mulai',paused:'Dijeda',lost:'Terhenti di '+percent+'%',clear:'Level selesai!',won:'Semua '+levels.length+' level selesai!'}[state]||'';
   get('detail').textContent=state==='lost'?'Percobaan '+attempts+' · Ketuk untuk ulang':state==='clear'?'100% · '+(ai?'AI akan lanjut otomatis':'Tekan Level berikutnya'):state==='won'?'100% · '+attempts+' percobaan di level terakhir':'';
 }
 function reset(mode,initial='playing'){
@@ -124,7 +161,7 @@ function reset(mode,initial='playing'){
 }
 function jump(){
   if(!player.grounded)return;
-  player.vy=-12.8;player.grounded=false;sound('move');
+  player.vy=-stage().boost;player.grounded=false;sound('move');
 }
 function nextLevel(){
   if(state!=='clear')return;
@@ -146,12 +183,13 @@ function tick(){
   if(state!=='playing')return;
   const track=stage();
   if(frameNo%track.frames===0)beat();
+  else if(track.jumpFrames.has(frameNo)&&musicOn&&music?.state==='running')tone(990,.055,.025,'triangle');
   if(ai&&track.jumpFrames.has(frameNo))jump();
   frameNo++;distance=frameNo*track.pace;
-  player.vy+=.9;player.y+=player.vy;
+  player.vy+=track.gravity;player.y+=player.vy;
   if(player.y>=FLOOR-SIZE){player.y=FLOOR-SIZE;player.vy=0;player.grounded=true;}
   setProgress();
-  if(player.y+SIZE>FLOOR-26&&track.spikes.some(x=>distance+SIZE-4>x+5&&distance+4<x+21)){
+  if(player.y+SIZE>FLOOR-track.spikeHeight&&track.spikes.some(x=>distance+SIZE-4>x+5&&distance+4<x+21)){
     state='lost';ai=false;sound('miss');refresh();return;
   }
   if(frameNo>=track.finishFrame){
@@ -162,7 +200,7 @@ function tick(){
   }
 }
 function draw(){
-  const {frames,stride,groups,spikes,finish,color}=stage();
+  const {frames,stride,groups,spikes,finish,color,spikeHeight}=stage();
   const phase=frameNo%frames;
   ctx.fillStyle=level===0?(distance>=32*stride?'#452747':distance>=16*stride?'#2a335c':color):color;
   ctx.fillRect(0,0,W,H);
@@ -180,7 +218,7 @@ function draw(){
     const x=X+place-distance;
     if(x<-26||x>W)continue;
     ctx.fillStyle='#ff9b96';ctx.beginPath();ctx.moveTo(x,FLOOR);
-    ctx.lineTo(x+13,FLOOR-26);ctx.lineTo(x+26,FLOOR);ctx.fill();
+    ctx.lineTo(x+13,FLOOR-spikeHeight);ctx.lineTo(x+26,FLOOR);ctx.fill();
   }
   const goal=X+finish-distance;
   if(goal<W){ctx.fillStyle='#c9ff83';ctx.fillRect(goal,FLOOR-82,6,82);ctx.fillRect(goal,FLOOR-82,39,22);}
