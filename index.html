@@ -41,6 +41,14 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .trap::before { background: #a2769e; clip-path: polygon(0 100%,0 65%,30% 65%,30% 78%,60% 78%,60% 53%,100% 53%,100% 100%); }
 .trap::after { background: #ff9f8b; clip-path: polygon(63% 53%,69% 35%,75% 53%,81% 35%,87% 53%); }
 .trap-cube { position: absolute; z-index:1; left:41%; top:35%; width:29px; height:29px; background:#ffdda1; border-radius:4px; transform:rotate(-13deg); }
+.orbit { background: #141a2b; }
+.orbit::before,.orbit::after { inset:auto; background:#a9b4d1; width:24%; height:11%; clip-path:none; }
+.orbit::before { left:12%; top:23%; }
+.orbit::after { right:8%; top:43%; }
+.orbit-ring { position:absolute; top:52%; left:50%; transform:translate(-50%,-25%) rotate(-28deg); width:76px; height:76px; border:2px solid #687596; border-radius:50%; }
+.orbit-ring::before,.orbit-ring::after { content:""; position:absolute; top:50%; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); }
+.orbit-ring::before { left:0; background:#a4ffe1; }
+.orbit-ring::after { left:100%; background:#ffae88; }
 </style>
 </head>
 <body>
@@ -73,6 +81,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art trap" aria-hidden="true"><span class="trap-cube"></span></div>
       <div class="info">
         <div><h2>Kotak Jebak</h2><p>Lewati 30 ruang dengan jebakan kejutan.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/orbit-kembar.html" aria-label="Mainkan Orbit Kembar">
+      <div class="art orbit" aria-hidden="true"><span class="orbit-ring"></span></div>
+      <div class="info">
+        <div><h2>Orbit Kembar</h2><p>Putar dua titik dan hindari balok jatuh.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
