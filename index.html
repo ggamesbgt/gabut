@@ -49,6 +49,10 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .orbit-ring::before,.orbit-ring::after { content:""; position:absolute; top:50%; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); }
 .orbit-ring::before { left:0; background:#a4ffe1; }
 .orbit-ring::after { left:100%; background:#ffae88; }
+.beat { background: repeating-linear-gradient(90deg, #ffffff13 0 1px, transparent 1px 48px), linear-gradient(#30264e,#452747); }
+.beat::before { inset:73% 0 0; background:#19162b; border-top:3px solid #c9ff83; clip-path:none; }
+.beat::after { background:#ff9b96; clip-path:polygon(54% 73%,59% 53%,64% 73%,69% 53%,74% 73%,79% 53%,84% 73%); }
+.beat-cube { position:absolute; z-index:1; left:39%; top:39%; width:32px; height:32px; background:#a9dac8; transform:rotate(-18deg); }
 </style>
 </head>
 <body>
@@ -88,6 +92,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art orbit" aria-hidden="true"><span class="orbit-ring"></span></div>
       <div class="info">
         <div><h2>Orbit Kembar</h2><p>Putar dua titik dan hindari balok jatuh.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/lompat-nada.html" aria-label="Mainkan Lompat Nada">
+      <div class="art beat" aria-hidden="true"><span class="beat-cube"></span></div>
+      <div class="info">
+        <div><h2>Lompat Nada</h2><p>Lompati duri mengikuti irama hingga 100%.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
