@@ -9,18 +9,19 @@
 <main>
 <a href="../index.html">← Kembali ke Gabut</a>
 <h1>Benteng Bara</h1>
+<p id="level"></p>
 <div class="meters">
 <div><label for="life">Nyawa ksatria</label><progress id="life" max="100" value="100"></progress><label for="stamina">Stamina</label><progress id="stamina" max="100" value="100"></progress></div>
-<div><label for="boss">Penjaga Tungku</label><progress id="boss" max="150" value="150"></progress></div>
+<div><label id="boss-name" for="boss">Penjaga Tungku</label><progress id="boss" max="150" value="150"></progress></div>
 </div>
 <canvas width="800" height="400" tabindex="0" aria-label="Arena pertarungan Benteng Bara"></canvas>
 <footer>
 <button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button>
 <button id="attack">Serang</button><button id="dodge">Dodge</button><button id="heal">Pulihkan (2)</button>
-<button id="ai" aria-pressed="false">Jalankan AI</button><button id="restart">Ulangi</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+<button id="ai" aria-pressed="false">Jalankan AI</button><button id="next" hidden>Level berikutnya</button><button id="retry" hidden>Ulangi level</button><button id="restart">Mulai dari awal</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
 </footer>
 <p>← / → bergerak · Z serang · X dodge · C pulihkan nyawa. Di HP, gunakan tombol di bawah arena.</p>
-<p>Waspadai garis merah. Hindari sapuan, lalu serang ketika penjaga sedang pulih.</p>
+<p>Waspadai garis merah. Hindari serangan, lalu balas saat bos sedang pulih. Nyawa, stamina, dan ramuan dipulihkan saat pindah level.</p>
 <p id="status" role="status"></p>
 </main>
 <script src="annoying-sound.js"></script>
@@ -30,10 +31,17 @@ const get=id=>document.getElementById(id);
 const canvas=document.querySelector('canvas');
 const ctx=canvas.getContext('2d');
 const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
-const FLOOR=320, AXE=121, SWORD=82, MIN=40, MAX=760;
+const FLOOR=320, SWORD=82, MIN=40, MAX=760;
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const held=new Map();
+const levels=[
+  {name:'Penjaga Tungku',hp:150,reach:121,height:79,armor:'#713c3d',damage:27,speed:2.1,windup:41,recovery:62,slam:false},
+  {name:'Ksatria Abu',hp:175,reach:137,height:92,armor:'#536571',damage:30,speed:2.6,windup:35,recovery:65,slam:false},
+  {name:'Giant Bara',hp:225,reach:150,height:145,armor:'#924a36',damage:38,speed:2.1,windup:48,recovery:84,slam:true}
+];
 const player={}, boss={};
+let levelIndex=0, intermission=0;
+const level=()=>levels[levelIndex];
 let ai=false, outcome='', flash=0;
 function status(message) { if(get('status').textContent!==message) get('status').textContent=message; }
 function setAI(enabled) {
@@ -49,10 +57,20 @@ function meters() {
   get('heal').textContent='Pulihkan ('+player.tonics+')';
 }
 function reset() {
-  setAI(false); outcome=''; flash=0;
+  setAI(false);
+  startLevel(0);
+}
+function startLevel(index) {
+  levelIndex=index; intermission=0; outcome=''; flash=0; held.clear();
+  const stage=level();
+  get('level').textContent='Level '+(index+1)+' / '+levels.length+' · '+stage.name;
+  get('boss-name').textContent=stage.name;
+  get('boss').max=stage.hp;
+  get('next').hidden=true;
+  get('retry').hidden=true;
   Object.assign(player,{x:204,hp:100,stamina:100,tonics:2,timer:0,action:'',roll:1});
-  Object.assign(boss,{x:589,hp:150,phase:'approach',timer:0,face:-1});
-  meters(); status('Dekati Penjaga Tungku.');
+  Object.assign(boss,{x:589,hp:stage.hp,phase:'approach',timer:0,face:-1});
+  meters(); status('Dekati '+stage.name+'.');
 }
 const separation=()=>Math.abs(boss.x-player.x);
 const toward=()=>Math.sign(boss.x-player.x)||1;
@@ -67,28 +85,39 @@ function act(type, direction) {
   sound('move');
 }
 function finish(result) {
+  if(result==='win' && levelIndex<levels.length-1) {
+    outcome='clear'; intermission=85;
+    get('next').hidden=false;
+    sound('win');
+    status('Level selesai. Bersiap untuk bos berikutnya.');
+    return;
+  }
   outcome=result; setAI(false);
+  get('retry').hidden=result!=='loss';
   sound(result==='win'?'win':'miss');
-  status(result==='win'?'Penjaga tumbang. Benteng direbut!':'Ksatria tumbang. Tekan Ulangi untuk mencoba lagi.');
+  status(result==='win'?'Giant Bara tumbang. Benteng direbut!':'Ksatria tumbang. Tekan Ulangi level untuk mencoba lagi.');
 }
 function pilot() {
   if (player.timer) return 0;
+  const stage=level();
   const dist=separation();
   if(boss.phase==='windup') {
-    if(boss.timer<=8 && dist<AXE+12 && player.stamina>=28) {
+    if(boss.timer<=8 && dist<stage.reach+12 && player.stamina>=28) {
       act('dodge',toward()); return 0;
     }
-    return dist<AXE?-toward():0;
+    return stage.slam ? 0 : dist<stage.reach?-toward():0;
   }
   if(boss.phase==='recover') {
-    if(player.hp<=55 && player.tonics && boss.timer>=40 && dist>AXE) {act('heal');return 0;}
-    if(dist<=SWORD && boss.timer>=14 && player.stamina>=24) {act('attack');return 0;}
+    if(player.hp<=55 && player.tonics && boss.timer>=40 && dist>stage.reach) {act('heal');return 0;}
+    if(dist<=SWORD && boss.timer>=14 && player.stamina>=(stage.slam?52:24)) {act('attack');return 0;}
     return dist>SWORD-12?toward():0;
   }
-  return dist>AXE+14?toward():0;
+  return dist>stage.reach+14?toward():0;
 }
 function tick() {
+  if(outcome==='clear' && ai && --intermission<=0) startLevel(levelIndex+1);
   if(outcome) return;
+  const stage=level();
   const steer=ai?pilot():Math.sign([...held.values()].reduce((sum,dir)=>sum+dir,0));
   if(player.timer) {
     player.timer--;
@@ -105,29 +134,31 @@ function tick() {
   player.x=clamp(player.x,MIN,MAX);
   if(outcome) {meters();return;}
   if(flash) flash--;
-  const enraged=boss.hp<=75;
+  const enraged=boss.hp<=stage.hp/2;
   if(boss.phase==='approach'){
-    if(separation()<=AXE-8) {
-      boss.phase='windup'; boss.timer=enraged?26:41; boss.face=-toward();
+    if(separation()<=stage.reach-8) {
+      boss.phase='windup'; boss.timer=enraged?stage.windup-15:stage.windup; boss.face=-toward();
     } else {
-      boss.x=clamp(boss.x-toward()*(enraged?3.1:2.1),MIN,MAX);
+      boss.x=clamp(boss.x-toward()*(stage.speed+(enraged?1:0)),MIN,MAX);
     }
   } else if(--boss.timer===0) {
     if(boss.phase==='windup'){
       const offset=(player.x-boss.x)*boss.face;
       const dodging=player.action==='dodge'&&player.timer>0;
-      if(offset>=-14&&offset<=AXE&&!dodging) {
-        player.hp=Math.max(0,player.hp-(enraged?35:27));
+      const inRange=stage.slam ? Math.abs(offset)<=stage.reach : offset>=-14&&offset<=stage.reach;
+      if(inRange&&!dodging) {
+        player.hp=Math.max(0,player.hp-(stage.damage+(enraged?8:0)));
         if(!player.hp) finish('loss');
         else sound('miss');
       }
-      boss.phase='recover'; boss.timer=enraged?48:62;
+      boss.phase='recover'; boss.timer=stage.recovery-(enraged?14:0);
     } else boss.phase='approach';
   }
-  if(!outcome) status(boss.phase==='windup'?'Penjaga bersiap menyapu!':boss.phase==='recover'?'Penjaga terbuka.':'Jaga jarak dan siapkan stamina.');
+  if(!outcome) status(boss.phase==='windup'?(stage.slam?'Giant siap menghantam kedua sisi!':'Bos bersiap menyapu!'):boss.phase==='recover'?'Bos terbuka.':'Jaga jarak dan siapkan stamina.');
   meters();
 }
 function draw() {
+  const stage=level();
   const sky=ctx.createLinearGradient(0,0,0,400);
   sky.addColorStop(0,'#261b29');sky.addColorStop(1,'#834333');
   ctx.fillStyle=sky;ctx.fillRect(0,0,800,400);
@@ -141,12 +172,12 @@ function draw() {
   for(let x=0;x<820;x+=61){ctx.beginPath();ctx.moveTo(x,FLOOR);ctx.lineTo(400+(x-400)*1.3,400);ctx.stroke();}
   if(boss.phase==='windup'&&!outcome){
     ctx.fillStyle='#fb553b55';
-    ctx.fillRect(boss.face<0?boss.x-AXE:boss.x,FLOOR-16,AXE,16);
+    ctx.fillRect(stage.slam||boss.face<0?boss.x-stage.reach:boss.x,FLOOR-16,stage.reach*(stage.slam?2:1),16);
     ctx.fillStyle='#ff946a';
     ctx.fillRect(boss.x-22,FLOOR-102,44*(boss.timer/(boss.hp<=75?26:41)),4);
   }
   fighter(player.x,player.timer&&player.action==='dodge'?28:49,'#d2c9ae','#87d6bf',toward());
-  fighter(boss.x,79,flash?'#ffd7a5':'#713c3d','#ff9b58',boss.phase==='windup'?boss.face:-toward());
+  fighter(boss.x,stage.height,flash?'#ffd7a5':stage.armor,'#ff9b58',boss.phase==='windup'?boss.face:-toward());
   if(player.timer&&player.action==='attack'){
     ctx.strokeStyle='#ffdfa0';ctx.lineWidth=4;ctx.beginPath();
     ctx.arc(player.x+toward()*22,FLOOR-31,32,toward()>0?-1.2:2,toward()>0?1.1:4.25);ctx.stroke();
@@ -174,6 +205,8 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('keyup',e=>held.delete(e.code));
 window.addEventListener('blur',()=>held.clear());
 for(const name of ['attack','dodge','heal'])get(name).onclick=()=>userAct(name);
+get('next').onclick=()=>{if(outcome==='clear')startLevel(levelIndex+1);canvas.focus();};
+get('retry').onclick=()=>{if(outcome==='loss')startLevel(levelIndex);canvas.focus();};
 get('restart').onclick=()=>{reset();canvas.focus();};
 get('ai').onclick=()=>{if(ai)setAI(false);else {reset();setAI(true);}canvas.focus();};
 let last,elapsed=0;
