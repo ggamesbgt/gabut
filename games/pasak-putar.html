@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pasak Putar — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101b19;color:#fff4dc;font:16px system-ui}main{width:min(100%,565px);margin:auto;padding:16px}a{color:#bfe7ac}header{display:flex;justify-content:space-between;align-items:end;gap:8px;margin:12px 0}h1{font-size:clamp(28px,7vw,55px);line-height:1;letter-spacing:-.06em;margin:0}output{font:650 clamp(14px,4vw,22px) monospace;color:#ffd386;white-space:nowrap}.arena{position:relative;border:1px solid #547465;border-radius:14px;overflow:hidden;background:#182b25}canvas{width:100%;height:min(61svh,560px);display:block;object-fit:contain;touch-action:none}.overlay{position:absolute;inset:0;display:grid;align-content:center;text-align:center;padding:14px;background:#14241bd4;pointer-events:none}.overlay[hidden],[hidden]{display:none}h2{font-size:clamp(23px,5vw,36px);margin:0}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{border:1px solid #739282;background:#263e35;color:inherit;border-radius:9px;font:inherit;padding:8px 11px}button:disabled{opacity:.48}button[aria-pressed=true]{color:#132d1c;background:#bfe7ac}button:focus-visible,canvas:focus-visible{outline:2px solid #ffd386;outline-offset:-2px}p{margin:8px 0;color:#c4dac9;font-size:14px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Pasak Putar</h1><output id="count"></output></header>
+<p id="track"></p>
+<div class="arena">
+<canvas width="400" height="525" tabindex="0" aria-label="Rotor Pasak Putar. Ketuk arena atau tekan Spasi untuk menembakkan pasak."></canvas>
+<div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="note"></p></div>
+</div>
+<footer>
+<button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button>
+<button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button>
+<button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Ketuk arena atau tekan Spasi untuk menembakkan pasak. Sisakan ruang agar pasak baru tidak menyentuh pasak lain.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const W=400,H=525,X=200,Y=215,EDGE=64,OUTER=139,TAU=2*Math.PI,ENTRY=Math.PI/2;
+const FLIGHT=15,CLEARANCE=.172;
+const levels=[
+  ['Awalan',2,5,.031,0,0],['Ruang Longgar',3,6,.035,0,0],
+  ['Putaran Stabil',4,7,.039,0,0],['Merapat',5,7,.043,0,0],
+  ['Gerak Cepat',6,8,.047,0,0],['Arus Ganda',7,8,.051,.12,0],
+  ['Balik Arah',7,9,.054,.12,243],['Ritme Patah',8,9,.058,.16,227],
+  ['Arah Silang',9,9,.062,.18,209],['Pusaran',9,10,.065,.20,191],
+  ['Jam Pasir',10,10,.068,.22,179],['Celah Tipis',11,10,.072,.24,167],
+  ['Arus Balik',11,11,.076,.26,151],['Titik Kritis',12,11,.080,.28,139],
+  ['Rotor Liar',12,12,.084,.30,127],['Puncak Putaran',13,12,.090,.33,113]
+].map(([name,fixed,ammo,pace,pulse,reverse])=>({name,fixed,ammo,pace,pulse,reverse}));
+const current=()=>levels[level];
+const gap=(a,b)=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)));
+let level=0,angle,t,remaining,pins,slots,waiting,shot,state,ai;
+function angularStep(frame){
+  const {pace,pulse,reverse}=current();
+  const direction=reverse&&Math.floor(frame/reverse)%2?-1:1;
+  return direction*pace*(1+pulse*Math.sin(frame*.047));
+}
+function fresh(index,mode,initial='playing'){
+  level=index;ai=mode;state=initial;angle=t=waiting=0;shot=0;
+  const {fixed,ammo}=current();
+  remaining=ammo;
+  const total=fixed+ammo;
+  const ring=Array.from({length:total},(_,i)=>i*TAU/total);
+  const initialSlots=new Set(Array.from({length:fixed},(_,i)=>Math.floor(i*total/fixed)));
+  pins=ring.filter((_,i)=>initialSlots.has(i)).map(local=>({local,newPin:false}));
+  slots=ring.filter((_,i)=>!initialSlots.has(i));
+  refresh();
+}
+function refresh(){
+  const {name,pulse,reverse}=current();
+  get('count').textContent=remaining+' pasak';
+  get('track').textContent='Level '+(level+1)+' / '+levels.length+' · '+name+
+    (reverse?' · Balik arah':pulse?' · Laju berubah':'');
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Bidik celahnya',paused:'Dijeda',lost:'Pasak bertabrakan!',clear:'Level selesai',won:'Rotor ditaklukkan!'}[state]||'';
+  get('note').textContent={ready:'Ketuk untuk mulai.',lost:'Ketuk untuk mengulang level.',
+    clear:ai?'AI akan lanjut otomatis.':'Ketuk atau pilih Level berikutnya.',
+    won:'Semua '+levels.length+' level selesai.'}[state]||'';
+  get('play').textContent=state==='ready'?'Mulai':state==='won'?'Main lagi':'Ulangi level';
+  get('next').hidden=state!=='clear';
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  get('pause').disabled=state!=='paused'&&state!=='playing';
+}
+function fire(){
+  if(shot||!remaining)return;
+  shot=FLIGHT;sound('move');
+}
+function restart(mode){fresh(state==='won'?0:level,mode);}
+function advance(){if(state==='clear')fresh(level+1,ai);}
+function input(){
+  if(state==='paused')return;
+  if(state==='clear'){advance();return;}
+  if(state!=='playing'){restart(false);return;}
+  if(ai){ai=false;refresh();}
+  fire();
+}
+function pilot(){
+  let projected=angle;
+  for(let i=1;i<=FLIGHT;i++)projected+=angularStep(t+i);
+  const local=ENTRY-projected;
+  if(slots.some(slot=>gap(slot,local)<.055)&&pins.every(pin=>gap(pin.local,local)>=CLEARANCE))fire();
+}
+function tick(){
+  if(state==='clear'&&ai&&--waiting<=0){advance();return;}
+  if(state!=='playing')return;
+  if(ai&&!shot)pilot();
+  angle=(angle+angularStep(++t))%TAU;
+  if(!shot||--shot)return;
+  const local=ENTRY-angle;
+  if(pins.some(pin=>gap(pin.local,local)<CLEARANCE)){
+    state='lost';ai=false;sound('miss');refresh();return;
+  }
+  pins.push({local,newPin:true});
+  // Mark the nearest target slot as filled.
+  if(slots.length){
+    const nearest=slots.reduce((best,slot,i)=>gap(slot,local)<gap(slots[best],local)?i:best,0);
+    slots.splice(nearest,1);
+  }
+  remaining--;
+  if(!remaining){
+    state=level===levels.length-1?'won':'clear';
+    waiting=58;
+    if(state==='won')ai=false;
+    sound('win');
+  }else sound('point');
+  refresh();
+}
+function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,TAU);}
+function draw(){
+  ctx.fillStyle='#182b25';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#466455';ctx.lineWidth=1;
+  circle(X,Y,OUTER);ctx.stroke();
+  for(let i=0;i<60;i++){
+    const a=i*TAU/60,c=Math.cos(a),s=Math.sin(a);
+    ctx.beginPath();ctx.moveTo(X+c*151,Y+s*151);
+    ctx.lineTo(X+c*(i%5?155:162),Y+s*(i%5?155:162));ctx.stroke();
+  }
+  for(const pin of pins){
+    const a=pin.local+angle,c=Math.cos(a),s=Math.sin(a);
+    const color=pin.newPin?'#ffd386':'#a5cfbe';
+    ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();
+    ctx.moveTo(X+c*EDGE,Y+s*EDGE);ctx.lineTo(X+c*OUTER,Y+s*OUTER);ctx.stroke();
+    circle(X+c*OUTER,Y+s*OUTER,5);ctx.fillStyle=color;ctx.fill();
+  }
+  circle(X,Y,EDGE);ctx.fillStyle='#233e34';ctx.fill();ctx.strokeStyle='#bfe7ac';ctx.lineWidth=2;ctx.stroke();
+  for(let i=0;i<3;i++){
+    const a=angle+i*TAU/3;
+    circle(X+Math.cos(a)*42,Y+Math.sin(a)*42,3);ctx.fillStyle='#8bba9d';ctx.fill();
+  }
+  ctx.fillStyle='#fff4dc';ctx.font='650 31px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(remaining,X,Y);
+  ctx.fillStyle='#496d5c';ctx.fillRect(X-14,473,28,28);
+  if(remaining&&state!=='lost'){
+    const y=shot?Y+OUTER+(482-Y-OUTER)*shot/FLIGHT:482;
+    ctx.fillStyle='#ffd386';ctx.fillRect(X-1.5,y-11,3,19);
+    circle(X,y,5);ctx.fill();
+  }
+}
+canvas.addEventListener('pointerdown',e=>{if(e.button===0){canvas.focus();input();}});
+document.addEventListener('keydown',e=>{
+  if((e.code==='Space'||e.code==='ArrowUp')&&!e.target.closest('button,a')){
+    e.preventDefault();if(!e.repeat)input();
+  }
+});
+get('play').onclick=()=>{restart(false);canvas.focus();};
+get('next').onclick=()=>{advance();canvas.focus();};
+get('ai').onclick=()=>{
+  if(ai){ai=false;refresh();}
+  else if(state==='clear'){ai=true;advance();}
+  else restart(true);
+  canvas.focus();
+};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';refresh();if(state==='playing')canvas.focus();};
+window.addEventListener('blur',()=>{if(state==='playing'){state='paused';refresh();}});
+let previous,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(previous??now));previous=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+fresh(0,false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
