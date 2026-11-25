@@ -27,6 +27,11 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .info p { color: #dfd0e7; margin: 0; font-size: 14px; }
 .play { display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 10px; background: #f6c9ff; color: #26172c; font-size: 14px; font-weight: 800; }
 @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+.mountain { background: radial-gradient(circle at 76% 34%, #ffdeb0 0 9%, transparent 9.4%), linear-gradient(#663e5a, #e79c77); }
+.mountain::before { background: #a25d74; }
+.mountain::after { background: #654254; }
+.climber { position: absolute; z-index: 1; left: 43%; top: 53%; width: 32px; height: 32px; border: 6px solid #ffda9e; border-radius: 50%; background: #362936; }
+.climber::before { content: ""; position: absolute; width: 56px; height: 2px; background: #ffda9e; bottom: 20px; left: 12px; transform: rotate(-55deg); transform-origin: left center; }
 </style>
 </head>
 <body>
@@ -38,6 +43,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art" aria-hidden="true"><span class="drone"></span></div>
       <div class="info">
         <div><h2>Arus Malam</h2><p>Terbang sendiri atau saksikan AI.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/puncak-senja.html" aria-label="Mainkan Puncak Senja">
+      <div class="art mountain" aria-hidden="true"><span class="climber"></span></div>
+      <div class="info">
+        <div><h2>Puncak Senja</h2><p>Ayunkan tali dan panjat sampai puncak.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
