@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbit Kembar — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#11131e;color:#edf0ff;font:16px system-ui}main{max-width:530px;margin:auto;padding:16px}a{color:#a8ffe7}header{display:flex;align-items:end;justify-content:space-between;gap:12px;margin:12px 0}h1{font-size:clamp(26px,7vw,48px);letter-spacing:-.055em;margin:0;line-height:1}.stats{text-align:right;white-space:nowrap;color:#bdc5e0;font-size:13px}output{display:block;color:#a8ffe7;font:700 28px monospace}.arena{position:relative;border:1px solid #394057;border-radius:16px;overflow:hidden;background:#141a2b}canvas{display:block;width:100%;height:min(62svh,570px);object-fit:contain;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;background:#0b0e1b95;pointer-events:none;padding:16px}.overlay[hidden]{display:none}h2{margin:0}p{margin:8px 0;color:#bdc5e0;font-size:14px}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{font:inherit;background:#242c43;color:#edf0ff;border:1px solid #536081;border-radius:9px;padding:8px 11px}button[aria-pressed=true]{background:#a8ffe7;color:#15352d}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #a8ffe7;outline-offset:-2px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Orbit Kembar</h1><div class="stats"><output id="score" aria-label="Skor">0</output><span id="speed"></span></div></header>
+<div class="arena">
+<canvas width="400" height="580" tabindex="0" aria-label="Arena Orbit Kembar. Tahan panah kiri atau kanan untuk memutar kedua titik."></canvas>
+<div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
+</div>
+<footer><button id="manual">Main sendiri</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause" disabled>Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button></footer>
+<p>Tahan sisi kiri atau kanan arena, atau gunakan tombol ← / →. Putar kedua titik untuk menghindari balok.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const W=400,H=580,CX=200,CY=448,ORBIT=53,DOT=9,TURN=.135,SPACING=254;
+const inputs=new Map();
+let angle,score,bars,ai,state;
+const speed=()=>Math.min(7.1,2.6+score*.11);
+function bar(y,center) {
+  return {y,center,half:center?22+Math.random()*13:20+Math.random()*14,height:22+Math.random()*22,passed:false};
+}
+function reset(mode,initial='playing') {
+  angle=0;score=0;ai=mode;state=initial;inputs.clear();
+  bars=[bar(125,true)];refresh();
+}
+function refresh() {
+  get('score').textContent=score;
+  get('speed').textContent=(speed()/2.6).toFixed(1)+'× laju';
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+  get('pause').disabled=state!=='playing'&&state!=='paused';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Putar dan hindari',paused:'Dijeda',over:'Titik menabrak balok'}[state]||'';
+  get('detail').textContent=state==='over'?'Skor '+score+' · Pilih mode untuk mencoba lagi':
+    state==='ready'?'Sentuh arena atau pilih mode di bawah.':'';
+}
+function dots() {
+  const dx=Math.cos(angle)*ORBIT,dy=Math.sin(angle)*ORBIT;
+  return [{x:CX+dx,y:CY+dy,color:'#a4ffe1'},{x:CX-dx,y:CY-dy,color:'#ffae88'}];
+}
+function rectangles(row) {
+  return row.center ? [[CX-row.half,CX+row.half]] : [[0,CX-row.half],[CX+row.half,W]];
+}
+function hit(dot,row,left,right) {
+  const x=Math.max(left,Math.min(right,dot.x)),y=Math.max(row.y,Math.min(row.y+row.height,dot.y));
+  return (dot.x-x)**2+(dot.y-y)**2<DOT**2;
+}
+function rotateAI() {
+  const next=bars.find(row=>row.y<=CY+ORBIT+DOT);
+  if(!next) return;
+  const target=next.center?0:Math.PI/2;
+  const error=target-angle;
+  const shortest=error-Math.PI*Math.round(error/Math.PI);
+  angle+=Math.max(-TURN,Math.min(TURN,shortest));
+}
+function tick() {
+  if(state!=='playing')return;
+  if(ai)rotateAI();
+  else angle+=TURN*Math.sign([...inputs.values()].reduce((sum,dir)=>sum+dir,0));
+  angle%=2*Math.PI;
+  const points=dots(), pace=speed();
+  for(const row of bars){
+    row.y+=pace;
+    if(rectangles(row).some(([left,right])=>points.some(dot=>hit(dot,row,left,right)))){
+      state='over';ai=false;inputs.clear();sound('miss');refresh();return;
+    }
+    if(!row.passed&&row.y>CY+ORBIT+DOT){
+      row.passed=true;score++;sound('point');refresh();
+    }
+  }
+  const last=bars.at(-1);
+  if(last.y>=SPACING-48)bars.push(bar(last.y-SPACING,Math.random()<.27?last.center:!last.center));
+  if(bars[0].y>H+44)bars.shift();
+}
+function circle(x,y,r){
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+}
+function draw(){
+  ctx.fillStyle='#141a2b';ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#323c56';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(CX,0);ctx.lineTo(CX,H);ctx.stroke();
+  for(const row of bars){
+    ctx.fillStyle=row.center?'#c0c9e5':'#9fabc9';
+    for(const [left,right] of rectangles(row))ctx.fillRect(left,row.y,right-left,row.height);
+  }
+  circle(CX,CY,ORBIT);ctx.strokeStyle='#687596';ctx.lineWidth=2;ctx.stroke();
+  const points=dots();
+  ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);ctx.lineTo(points[1].x,points[1].y);
+  ctx.strokeStyle='#4f5874';ctx.stroke();
+  for(const dot of points){circle(dot.x,dot.y,DOT);ctx.fillStyle=dot.color;ctx.fill();}
+}
+function steer(key,dir) {
+  if(state==='paused')return;
+  if(state!=='playing')reset(false);
+  if(ai){ai=false;refresh();}
+  if(!inputs.size)sound('move');
+  inputs.set(key,dir);
+}
+canvas.addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;
+  canvas.focus();canvas.setPointerCapture(event.pointerId);
+  const rect=canvas.getBoundingClientRect();
+  steer(event.pointerId,event.clientX<rect.left+rect.width/2?-1:1);
+});
+canvas.addEventListener('lostpointercapture',event=>inputs.delete(event.pointerId));
+const directions={ArrowLeft:-1,ArrowRight:1,KeyA:-1,KeyD:1};
+document.addEventListener('keydown',event=>{
+  if(!directions[event.code])return;
+  event.preventDefault();
+  if(!event.repeat)steer(event.code,directions[event.code]);
+});
+document.addEventListener('keyup',event=>inputs.delete(event.code));
+window.addEventListener('blur',()=>{
+  inputs.clear();
+  if(state==='playing'){state='paused';refresh();}
+});
+get('manual').onclick=()=>{reset(false);canvas.focus();};
+get('ai').onclick=()=>{if(ai){ai=false;refresh();}else reset(true);canvas.focus();};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';inputs.clear();refresh();if(state==='playing')canvas.focus();};
+let previous,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(previous??now));previous=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+reset(false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
