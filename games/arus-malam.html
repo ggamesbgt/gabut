@@ -22,7 +22,8 @@ const get = id => document.getElementById(id);
 const canvas = document.querySelector('canvas');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
-const X = 165, R = 12, GATE = 70, SPACING = 365;
+const X = 165, R = 12, SPACING = 365;
+const PIPE_WIDTHS = [52, 68, 84, 100];
 const GRAVITY = .32, BOOST = -5.8;
 const stars = Array.from({length:75}, (_, i) => ({
   x: (i * 131.53) % W, y: (i * 73.11) % 340, size: i % 7 === 0 ? 2 : 1
@@ -40,7 +41,7 @@ function reset(nextMode, nextState) {
   state = nextState;
   y = H / 2;
   velocity = score = ticks = 0;
-  gates = [{x:W * .74, center:H / 2, gap:164, passed:false}];
+  gates = [{x:W * .74, center:H / 2, gap:164, width:68, passed:false}];
   targetY = y;
   refresh();
 }
@@ -68,7 +69,7 @@ function manualInput() {
   flap();
 }
 function autopilot() {
-  const next = gates.find(gate => gate.x + GATE >= X - R);
+  const next = gates.find(gate => gate.x + gate.width >= X - R);
   if (!next) return;
   targetY = next.center;
   const projectedY = y + Math.max(0, velocity) * 2;
@@ -83,9 +84,9 @@ function step() {
   y += velocity;
   for (const gate of gates) {
     gate.x -= speed;
-    const inColumn = gate.x < X + R && gate.x + GATE > X - R;
+    const inColumn = gate.x < X + R && gate.x + gate.width > X - R;
     if (inColumn && Math.abs(y - gate.center) + R > gate.gap / 2) return finish();
-    if (!gate.passed && gate.x + GATE <= X - R) {
+    if (!gate.passed && gate.x + gate.width <= X - R) {
       gate.passed = true;
       score++;
       if (score > records[mode]) {
@@ -99,9 +100,11 @@ function step() {
   const last = gates.at(-1);
   if (last.x < W - SPACING) {
     const center = Math.max(112, Math.min(H - 112, last.center + (Math.random() * 2 - 1) * 105));
-    gates.push({x:last.x + SPACING, center, gap:Math.max(129,164-score), passed:false});
+    const widths = PIPE_WIDTHS.filter(width => width !== last.width);
+    const width = widths[Math.floor(Math.random() * widths.length)];
+    gates.push({x:last.x + SPACING, center, gap:Math.max(129,164-score), width, passed:false});
   }
-  if (gates[0].x + GATE + 100 < 0) gates.shift();
+  if (gates[0].x + gates[0].width + 100 < 0) gates.shift();
 }
 function finish() {
   state = 'over';
@@ -128,11 +131,11 @@ function draw() {
   for (const gate of gates) {
     const top = gate.center - gate.gap / 2, bottom = gate.center + gate.gap / 2;
     ctx.fillStyle = '#243a48';
-    ctx.fillRect(gate.x,0,GATE,top); ctx.fillRect(gate.x,bottom,GATE,H-bottom);
+    ctx.fillRect(gate.x,0,gate.width,top); ctx.fillRect(gate.x,bottom,gate.width,H-bottom);
     ctx.fillStyle = '#315665';
     ctx.fillRect(gate.x + 11,0,5,top); ctx.fillRect(gate.x + 11,bottom,5,H-bottom);
     ctx.fillStyle = '#75ead1';
-    ctx.fillRect(gate.x,top-4,GATE,4); ctx.fillRect(gate.x,bottom,GATE,4);
+    ctx.fillRect(gate.x,top-4,gate.width,4); ctx.fillRect(gate.x,bottom,gate.width,4);
   }
   if (mode === 'ai') {
     ctx.strokeStyle = '#8fffe1a5'; ctx.setLineDash([4,6]); ctx.beginPath();
