@@ -10,7 +10,7 @@
 <a href="../index.html">← Kembali ke Gabut</a>
 <header><h1>Puncak Senja</h1><output id="height">0 m</output></header>
 <canvas tabindex="0" aria-label="Arena robot panjat. Gunakan Spasi dan panah kiri atau kanan."></canvas>
-<footer><button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="hook">Kaitkan tali</button><button id="higher">Kait lebih tinggi</button><button id="reset">Ulangi</button></footer>
+<footer><button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="hook">Kaitkan tali</button><button id="higher">Kait lebih tinggi</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="reset">Ulangi</button></footer>
 <p>Klik atau sentuh cincin emas untuk mengait. Spasi mengait ke cincin tertinggi dalam jangkauan atau melepas tali. Tekan ↑ untuk pindah ke cincin lebih tinggi. Tahan ← / → untuk mengayun. Capai pelataran berbendera.</p>
 <p id="message" role="status"></p>
 </main>
@@ -24,6 +24,7 @@ const anchors = [[239,150],[356,290],[212,432],[105,576],[260,720],[404,860],[27
 const ledges = [[0,520,0],[331,465,215],[63,184,485],[360,483,785],[70,188,1060],[316,493,SUMMIT]];
 const player = {x:160,y:R,vx:0,vy:0};
 const held = new Set();
+let ai = false, aiAnchor = 0, aiTicks = 0;
 let rope, won=false, peak=0, camera=0, scale=1, height=430;
 const distance = point => Math.hypot(point.x-player.x,point.y-player.y);
 function target() {
@@ -47,14 +48,32 @@ function toggle() {
   rope=null;
   showHook();
 }
+function stopAI() {
+  ai=false;
+  get("ai").setAttribute("aria-pressed","false");
+  get("ai").textContent="Jalankan AI";
+}
 function reset() {
+  stopAI();
   Object.assign(player,{x:160,y:R,vx:0,vy:0});
   rope=null; won=false; peak=0; camera=0; held.clear();
   get('message').textContent='';
   showHook();
 }
+function pilot() {
+  if (aiTicks > 0) { aiTicks--; return; }
+  const point = anchors[aiAnchor];
+  if (point) {
+    attach(point);
+    aiAnchor++;
+    aiTicks=119;
+  } else if (rope) {
+    toggle();
+  }
+}
 function tick() {
   if (won) return;
+  if (ai) pilot();
   const steer=Number(held.has('right'))-Number(held.has('left'));
   player.vx=(player.vx+steer*.28)*.965;
   player.vy=(player.vy-.32)*.985;
@@ -79,6 +98,7 @@ function tick() {
       player.y=top; player.vy=0;
       if (y===SUMMIT) {
         won=true; rope=null; showHook();
+        if (ai) stopAI();
         get('message').textContent='Sampai di puncak!';
       }
     }
@@ -136,6 +156,7 @@ function draw() {
   circle(player.x+3,screenY(player.y)-3,3,'#b7ffeb');
 }
 canvas.addEventListener('pointerdown',event=>{
+  stopAI();
   canvas.focus();
   const rect=canvas.getBoundingClientRect();
   const x=(event.clientX-rect.left-canvas.clientLeft)/scale;
@@ -147,6 +168,7 @@ canvas.addEventListener('pointerdown',event=>{
 const directions={ArrowLeft:'left',ArrowRight:'right',KeyA:'left',KeyD:'right'};
 document.addEventListener('keydown',event=>{
   const side=directions[event.code];
+  if (side || event.code==='ArrowUp' || (event.code==='Space' && !event.target.closest('button,a'))) stopAI();
   if (event.code==='ArrowUp') {
     event.preventDefault();
     if (!event.repeat) attach(target());
@@ -162,12 +184,21 @@ window.addEventListener('blur',()=>held.clear());
 for (const side of ['left','right']) {
   const button=get(side);
   button.addEventListener('pointerdown',event=>{
+    stopAI();
     button.setPointerCapture(event.pointerId); held.add(side);
   });
   button.addEventListener('lostpointercapture',()=>held.delete(side));
 }
-get('hook').onclick=()=>{toggle();canvas.focus();};
-get('higher').onclick=()=>{attach(target());canvas.focus();};
+get('hook').onclick=()=>{stopAI();toggle();canvas.focus();};
+get('higher').onclick=()=>{stopAI();attach(target());canvas.focus();};
+get('ai').onclick=()=>{
+  if (ai) { stopAI(); return; }
+  reset();
+  ai=true; aiAnchor=0; aiTicks=0;
+  get('ai').setAttribute('aria-pressed','true');
+  get('ai').textContent='Hentikan AI';
+  canvas.focus();
+};
 get('reset').onclick=()=>{reset();canvas.focus();};
 let last,elapsed=0;
 function frame(now) {
