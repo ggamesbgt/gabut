@@ -13,11 +13,13 @@
 <canvas tabindex="0" width="800" height="450" aria-label="Arena drone. Tekan spasi atau sentuh arena untuk naik."></canvas>
 <div class="overlay" id="overlay" role="status"><h2 id="status"></h2><p id="detail"></p></div>
 </div>
-<footer><button id="manual">Main sendiri</button><button id="ai">Jalankan AI</button><button id="pause">Jeda</button></footer>
+<footer><button id="manual">Main sendiri</button><button id="ai">Jalankan AI</button><button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button></footer>
 <p id="help"></p>
 </main>
+<script src="annoying-sound.js"></script>
 <script>
 'use strict';
+const sound = typeof bindAnnoyingSound === 'function' ? bindAnnoyingSound(document.getElementById('sound')) : () => {};
 const get = id => document.getElementById(id);
 const canvas = document.querySelector('canvas');
 const ctx = canvas.getContext('2d');
@@ -61,6 +63,7 @@ function refresh() {
     'Spasi, klik, atau sentuh arena untuk naik. Lewati setiap gerbang untuk mendapat satu poin.';
 }
 function flap() {
+  sound("move");
   velocity = BOOST;
 }
 function manualInput() {
@@ -89,6 +92,7 @@ function step() {
     if (!gate.passed && gate.x + gate.width <= X - R) {
       gate.passed = true;
       score++;
+      sound("point");
       if (score > records[mode]) {
         records[mode] = score;
         try { localStorage.setItem('arus-malam-records',JSON.stringify(records)); } catch {}
@@ -107,6 +111,7 @@ function step() {
   if (gates[0].x + gates[0].width + 100 < 0) gates.shift();
 }
 function finish() {
+  sound("miss");
   state = 'over';
   refresh();
 }
