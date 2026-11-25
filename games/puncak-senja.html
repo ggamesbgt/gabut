@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Puncak Senja — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#211923;color:#fff3e6;font:16px system-ui}main{max-width:760px;margin:auto;padding:20px}a{color:#ffd69e}header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0}h1{font-size:clamp(28px,6vw,52px);letter-spacing:-.06em;margin:0}output{color:#ffd69e;text-align:right}canvas{width:100%;height:min(62svh,560px);display:block;touch-action:none;border:1px solid #b88378;border-radius:16px}footer{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}button{background:#3b2935;color:#fff3e6;border:1px solid #ad7989;border-radius:8px;padding:8px 13px;font:inherit;touch-action:none}p{color:#e8c7bc;font-size:14px;margin:9px 0}#message{color:#ffe0a1;min-height:20px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Puncak Senja</h1><output id="height">0 m</output></header>
+<canvas tabindex="0" aria-label="Arena robot panjat. Gunakan Spasi dan panah kiri atau kanan."></canvas>
+<footer><button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="hook">Kaitkan tali</button><button id="higher">Kait lebih tinggi</button><button id="reset">Ulangi</button></footer>
+<p>Klik atau sentuh cincin emas untuk mengait. Spasi mengait ke cincin tertinggi dalam jangkauan atau melepas tali. Tekan ↑ untuk pindah ke cincin lebih tinggi. Tahan ← / → untuk mengayun. Capai pelataran berbendera.</p>
+<p id="message" role="status"></p>
+</main>
+<script>
+'use strict';
+const get = id => document.getElementById(id);
+const canvas = document.querySelector('canvas');
+const ctx = canvas.getContext('2d');
+const WIDTH = 520, REACH = 270, R = 15, SUMMIT = 1460;
+const anchors = [[239,150],[356,290],[212,432],[105,576],[260,720],[404,860],[276,1000],[130,1138],[275,1320],[367,1530]].map(([x,y])=>({x,y}));
+const ledges = [[0,520,0],[331,465,215],[63,184,485],[360,483,785],[70,188,1060],[316,493,SUMMIT]];
+const player = {x:160,y:R,vx:0,vy:0};
+const held = new Set();
+let rope, won=false, peak=0, camera=0, scale=1, height=430;
+const distance = point => Math.hypot(point.x-player.x,point.y-player.y);
+function target() {
+  return anchors.filter(point=>point.y>player.y+18 && distance(point)<=REACH).at(-1);
+}
+function showHook() { get('hook').textContent = rope ? 'Lepas tali' : 'Kaitkan tali'; }
+function attach(point) {
+  if (won) return;
+  if (!point || distance(point)>REACH) {
+    get('message').textContent='Cincin di luar jangkauan.';
+    return;
+  }
+  rope={point,length:distance(point)};
+  get('message').textContent='';
+  showHook();
+}
+function toggle() {
+  if (won) return;
+  if (!rope) return attach(target());
+  player.vy=Math.max(6.6,player.vy);
+  rope=null;
+  showHook();
+}
+function reset() {
+  Object.assign(player,{x:160,y:R,vx:0,vy:0});
+  rope=null; won=false; peak=0; camera=0; held.clear();
+  get('message').textContent='';
+  showHook();
+}
+function tick() {
+  if (won) return;
+  const steer=Number(held.has('right'))-Number(held.has('left'));
+  player.vx=(player.vx+steer*.28)*.965;
+  player.vy=(player.vy-.32)*.985;
+  if (rope) {
+    const dx=rope.point.x-player.x, dy=rope.point.y-player.y;
+    const length=Math.hypot(dx,dy);
+    rope.length=Math.max(29,rope.length-2.8);
+    if (length>rope.length) {
+      const tension=Math.min(1.7,(length-rope.length)*.1);
+      player.vx+=tension*dx/length;
+      player.vy+=tension*dy/length;
+    }
+  }
+  const nextX=player.x+player.vx;
+  player.x=Math.min(WIDTH-R,Math.max(R,nextX));
+  if (player.x!==nextX) player.vx=0;
+  const oldY=player.y;
+  player.y+=player.vy;
+  for (const [left,right,y] of ledges) {
+    const top=y+R;
+    if (oldY>=top && player.y<=top && player.x>left && player.x<right) {
+      player.y=top; player.vy=0;
+      if (y===SUMMIT) {
+        won=true; rope=null; showHook();
+        get('message').textContent='Sampai di puncak!';
+      }
+    }
+  }
+  peak=Math.max(peak,player.y-R);
+  const stats=Math.round((player.y-R)/10)+' m · Rekor '+Math.round(peak/10)+' m';
+  if (get('height').textContent!==stats) get('height').textContent=stats;
+  camera+=(Math.max(0,player.y-height*.29)-camera)*.15;
+}
+function circle(x,y,r,color) {
+  ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+}
+function screenY(y) { return height-24-y+camera; }
+function draw() {
+  const width=canvas.clientWidth, cssHeight=canvas.clientHeight, ratio=window.devicePixelRatio||1;
+  const pixelWidth=Math.round(width*ratio), pixelHeight=Math.round(cssHeight*ratio);
+  if (canvas.width!==pixelWidth || canvas.height!==pixelHeight) {
+    canvas.width=pixelWidth; canvas.height=pixelHeight;
+  }
+  scale=width/WIDTH;
+  height=cssHeight/scale;
+  ctx.setTransform(ratio*scale,0,0,ratio*scale,0,0);
+  const sky=ctx.createLinearGradient(0,0,0,height);
+  sky.addColorStop(0,'#67405c'); sky.addColorStop(1,'#eba478');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,WIDTH,height);
+  circle(421,height*.21,35,'#ffe0a0');
+  for (let layer=0;layer<3;layer++) {
+    ctx.fillStyle=['#a36073','#81455d','#593548'][layer];
+    ctx.beginPath(); ctx.moveTo(0,height);
+    for (let x=0;x<=WIDTH;x+=10) {
+      const ridge=height*(.7+layer*.11)+Math.sin(x/(42+layer*13)+layer)*39-camera*.04*(layer+1);
+      ctx.lineTo(x,ridge);
+    }
+    ctx.lineTo(WIDTH,height); ctx.fill();
+  }
+  for (const [left,right,y] of ledges) {
+    ctx.fillStyle='#422e3e'; ctx.fillRect(left,screenY(y),right-left,24);
+    ctx.fillStyle='#ffd099'; ctx.fillRect(left,screenY(y),right-left,4);
+  }
+  const suggested=target();
+  for (const point of anchors) {
+    circle(point.x,screenY(point.y),point===suggested?12:9,distance(point)<=REACH?'#ffdf8b':'#cc9381');
+    circle(point.x,screenY(point.y),4,'#70455b');
+  }
+  const flag=screenY(SUMMIT);
+  ctx.fillStyle='#fff0b5'; ctx.fillRect(465,flag-53,3,53);
+  ctx.beginPath(); ctx.moveTo(467,flag-53); ctx.lineTo(504,flag-43); ctx.lineTo(467,flag-31); ctx.fill();
+  if (rope) {
+    ctx.strokeStyle='#fff0b5'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(player.x,screenY(player.y));
+    ctx.lineTo(rope.point.x,screenY(rope.point.y)); ctx.stroke();
+  }
+  circle(player.x,screenY(player.y),R,'#ffda9e');
+  circle(player.x,screenY(player.y)-2,9,'#392b3a');
+  circle(player.x+3,screenY(player.y)-3,3,'#b7ffeb');
+}
+canvas.addEventListener('pointerdown',event=>{
+  canvas.focus();
+  const rect=canvas.getBoundingClientRect();
+  const x=(event.clientX-rect.left-canvas.clientLeft)/scale;
+  const y=height-24+camera-(event.clientY-rect.top-canvas.clientTop)/scale;
+  const point=anchors.find(anchor=>Math.hypot(anchor.x-x,anchor.y-y)<25);
+  if (point) attach(point);
+  else toggle();
+});
+const directions={ArrowLeft:'left',ArrowRight:'right',KeyA:'left',KeyD:'right'};
+document.addEventListener('keydown',event=>{
+  const side=directions[event.code];
+  if (event.code==='ArrowUp') {
+    event.preventDefault();
+    if (!event.repeat) attach(target());
+  } else if (side) {
+    event.preventDefault(); held.add(side);
+  } else if (event.code==='Space' && !event.target.closest('button,a')) {
+    event.preventDefault();
+    if (!event.repeat) toggle();
+  }
+});
+document.addEventListener('keyup',event=>held.delete(directions[event.code]));
+window.addEventListener('blur',()=>held.clear());
+for (const side of ['left','right']) {
+  const button=get(side);
+  button.addEventListener('pointerdown',event=>{
+    button.setPointerCapture(event.pointerId); held.add(side);
+  });
+  button.addEventListener('lostpointercapture',()=>held.delete(side));
+}
+get('hook').onclick=()=>{toggle();canvas.focus();};
+get('higher').onclick=()=>{attach(target());canvas.focus();};
+get('reset').onclick=()=>{reset();canvas.focus();};
+let last,elapsed=0;
+function frame(now) {
+  elapsed+=Math.min(65,now-(last??now)); last=now;
+  while (elapsed>=1000/60) {tick();elapsed-=1000/60;}
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</html>
