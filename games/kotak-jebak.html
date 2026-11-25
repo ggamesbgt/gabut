@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kotak Jebak — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#141824;color:#fff1dd;font:16px system-ui}main{max-width:850px;margin:auto;padding:clamp(12px,4vw,32px)}a{color:#aaffdf}header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:8px;margin:9px 0}h1{font-size:clamp(32px,7vw,60px);letter-spacing:-.06em;margin:0}output,p{color:#c8c8db;font-size:14px}canvas{display:block;width:100%;aspect-ratio:2/1;background:#212943;border:1px solid #596383;border-radius:13px}footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}button{background:#292f49;color:inherit;border:1px solid #6d759c;border-radius:8px;padding:9px 12px;font:inherit;touch-action:none}button[aria-pressed=true]{background:#aaffdf;color:#192b29}button:focus-visible,canvas:focus-visible{outline:2px solid #aaffdf;outline-offset:3px}p{margin:9px 0}#status{min-height:1.4em;color:#ffcf9e}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Kotak Jebak</h1><output id="stats"></output></header>
+<canvas width="800" height="400" tabindex="0" aria-label="Arena platformer Kotak Jebak"></canvas>
+<footer>
+<button id="left" aria-label="Gerak kiri">←</button><button id="right" aria-label="Gerak kanan">→</button><button id="jump">Lompat</button>
+<button id="retry">Ulangi level</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Gunakan ← / → dan Spasi, atau tombol di layar. Capai pintu hijau. Perhatikan lantai berkedip dan bayangan di bawah blok.</p>
+<p id="status" role="status"></p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'), ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const FLOOR=307, SPEED=4.8, R=11;
+const levels=[
+  {name:'Duri Bangun',holes:[[440,535]],spikes:[[235,281]],crumble:[],blocks:[]},
+  {name:'Lantai Palsu',holes:[[574,655]],spikes:[],crumble:[[199,304],[371,452]],blocks:[]},
+  {name:'Gudang Runtuh',holes:[[315,402]],spikes:[[500,544]],crumble:[[683,728]],blocks:[[174,218],[454,481]]}
+];
+const held=new Map();
+const player={};
+let level=0, deaths=0, ai=false, state='', delay=0, traps=[];
+const saveDirection=()=>Math.sign([...held.values()].reduce((sum,dir)=>sum+dir,0));
+function status(message){if(get('status').textContent!==message)get('status').textContent=message;}
+function setAI(enabled){
+  ai=enabled;held.clear();
+  get('ai').textContent=ai?'Hentikan AI':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+}
+function start(index){
+  level=index;state='playing';delay=0;held.clear();
+  const stage=levels[index];
+  traps=['spikes','crumble','blocks'].flatMap(type=>stage[type].map(([left,right])=>({type,left,right,time:0})));
+  Object.assign(player,{x:61,y:FLOOR-R,vy:0,grounded:true});
+  get('stats').textContent='Level '+(index+1)+' / '+levels.length+' · Jatuh '+deaths;
+  get('retry').textContent='Ulangi level';
+  status(stage.name);
+}
+function jump(){
+  if(state!=='playing'||!player.grounded)return;
+  player.vy=-12;player.grounded=false;sound('move');
+}
+function fail(message) {
+  state='lost';deaths++;setAI(false);
+  get('stats').textContent='Level '+(level+1)+' / '+levels.length+' · Jatuh '+deaths;
+  sound('miss');status(message+' Tekan Ulangi level.');
+}
+function clear() {
+  if(level===levels.length-1){
+    state='won';setAI(false);get('retry').textContent='Main lagi';
+    sound('win');status('Semua ruang berhasil dilewati!');
+  } else {
+    state='next';delay=55;sound('point');status('Pintu terbuka! Ruang berikutnya…');
+  }
+}
+function inside(x,left,right){return x>=left&&x<=right;}
+function tick(){
+  if(state==='next'){if(--delay<=0)start(level+1);return;}
+  if(state!=='playing')return;
+  const stage=levels[level];
+  if(ai && [...stage.holes,...stage.spikes,...stage.crumble].some(([left])=>left-player.x>=16&&left-player.x<=29))jump();
+  player.x=Math.max(R,Math.min(789,player.x+(ai?1:saveDirection())*SPEED));
+  const prev=player.y;
+  player.vy+=.64;player.y+=player.vy;
+  player.grounded=false;
+  for(const trap of traps){
+    const lead=trap.type==='blocks'?35:trap.type==='spikes'?58:25;
+    if(trap.time || inside(player.x,trap.left-lead,trap.right))trap.time++;
+    const overlaps=player.x+R>trap.left&&player.x-R<trap.right;
+    if(trap.type==='spikes'&&trap.time>=9&&overlaps&&player.y+R>FLOOR-27)return fail('Duri muncul!');
+    if(trap.type==='blocks'&&trap.time>=20&&overlaps){
+      const bottom=blockBottom(trap);
+      if(player.y+R>bottom-36&&player.y-R<bottom)return fail('Blok menimpa!');
+    }
+  }
+  const hole=stage.holes.some(([left,right])=>inside(player.x,left,right));
+  const collapsed=traps.some(trap=>trap.type==='crumble'&&trap.time>=12&&inside(player.x,trap.left,trap.right));
+  if(!hole&&!collapsed&&prev+R<=FLOOR&&player.y+R>=FLOOR){
+    player.y=FLOOR-R;player.vy=0;player.grounded=true;
+  }
+  if(player.y>430)return fail('Lantai hilang!');
+  if(player.x>=754&&player.grounded)clear();
+}
+function blockBottom(trap){return Math.min(FLOOR,72+Math.max(0,trap.time-19)*13);}
+function draw(){
+  const sky=ctx.createLinearGradient(0,0,0,400);
+  sky.addColorStop(0,'#212743');sky.addColorStop(1,'#4c4265');ctx.fillStyle=sky;ctx.fillRect(0,0,800,400);
+  ctx.strokeStyle='#a396c226';ctx.lineWidth=1;
+  for(let x=0;x<800;x+=45){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,FLOOR);ctx.stroke();}
+  ctx.fillStyle='#796b99';ctx.fillRect(0,FLOOR,800,93);
+  for(const [left,right] of levels[level].holes){ctx.fillStyle='#17182c';ctx.fillRect(left,FLOOR,right-left,93);}
+  ctx.fillStyle='#aaffdf';ctx.fillRect(746,FLOOR-53,31,53);
+  ctx.fillStyle='#315c61';ctx.fillRect(751,FLOOR-47,21,47);
+  for(const trap of traps){
+    const width=trap.right-trap.left;
+    if(trap.type==='crumble'){
+      ctx.fillStyle=trap.time>=12?'#17182c':trap.time?'#e5a275':'#8d7ba8';
+      ctx.fillRect(trap.left,FLOOR,width,trap.time>=12?93:7);
+    } else if(trap.type==='blocks'){
+      const bottom=blockBottom(trap);
+      ctx.fillStyle=trap.time?'#ff9f7d55':'#16182855';ctx.fillRect(trap.left,FLOOR-5,width,5);
+      ctx.fillStyle='#ed8b83';ctx.fillRect(trap.left,bottom-36,width,36);
+      ctx.fillStyle='#43243c';ctx.fillRect(trap.left+6,bottom-13,width-12,4);
+    } else if(trap.time>=9){
+      ctx.fillStyle='#ff9f8b';ctx.beginPath();ctx.moveTo(trap.left,FLOOR);
+      for(let x=trap.left;x<trap.right;x+=12){ctx.lineTo(Math.min(x+6,trap.right),FLOOR-27);ctx.lineTo(Math.min(x+12,trap.right),FLOOR);}
+      ctx.fill();
+    } else if(trap.time){
+      ctx.fillStyle='#ffcb88';ctx.fillRect(trap.left,FLOOR-3,width,3);
+    }
+  }
+  if(state!=='lost'){
+    ctx.fillStyle='#ffdda1';ctx.fillRect(player.x-R,player.y-R,R*2,R*2);
+    ctx.fillStyle='#463144';ctx.fillRect(player.x+2,player.y-6,5,6);
+  }
+}
+function takeOver(){if(ai)setAI(false);}
+const moves={ArrowLeft:-1,ArrowRight:1,KeyA:-1,KeyD:1};
+for(const [id,dir] of [['left',-1],['right',1]]){
+  const button=get(id);
+  button.addEventListener('pointerdown',e=>{takeOver();button.setPointerCapture(e.pointerId);held.set(e.pointerId,dir);});
+  button.addEventListener('lostpointercapture',e=>held.delete(e.pointerId));
+}
+document.addEventListener('keydown',e=>{
+  if(moves[e.code]){e.preventDefault();takeOver();held.set(e.code,moves[e.code]);}
+  if((e.code==='Space'||e.code==='ArrowUp')&&!e.target.closest('button,a')){
+    e.preventDefault();if(!e.repeat){takeOver();jump();}
+  }
+});
+document.addEventListener('keyup',e=>held.delete(e.code));
+window.addEventListener('blur',()=>held.clear());
+get('jump').onclick=()=>{takeOver();jump();canvas.focus();};
+get('retry').onclick=()=>{takeOver();if(state==='won'){deaths=0;start(0);}else start(level);canvas.focus();};
+get('ai').onclick=()=>{if(ai)setAI(false);else{deaths=0;start(0);setAI(true);}canvas.focus();};
+let last,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(last??now));last=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+start(0);requestAnimationFrame(frame);
+</script>
+</html>
