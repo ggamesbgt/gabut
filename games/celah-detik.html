@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Celah Detik — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#122027;color:#eff9e9;font:16px system-ui}main{max-width:770px;margin:auto;padding:clamp(12px,4vw,28px)}a{color:#ccf3a4}header{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:12px 0}h1{margin:0;font-size:clamp(30px,7vw,60px);letter-spacing:-.07em;line-height:1}output{text-align:right;color:#ccf3a4;font-size:14px}.arena{position:relative}.arena canvas{display:block;width:100%;aspect-ratio:11/7;background:#28414a;border:1px solid #557680;border-radius:14px}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;border-radius:14px;background:#102029c9;padding:15px;pointer-events:none}.overlay[hidden],[hidden]{display:none}h2{margin:0;font-size:clamp(22px,5vw,39px)}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{color:inherit;background:#253c45;border:1px solid #678a92;border-radius:8px;padding:8px 11px;font:inherit;touch-action:none}button[aria-pressed=true]{color:#1c3022;background:#ccf3a4}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #ccf3a4;outline-offset:2px}p{margin:8px 0;color:#c3dcd7;font-size:14px}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Celah Detik</h1><output id="stats"></output></header>
+<div class="arena">
+<canvas width="616" height="392" tabindex="0" aria-label="Arena Celah Detik. Gunakan tombol arah untuk bergerak."></canvas>
+<div class="overlay" id="overlay" role="status"><div><h2 id="headline"></h2><p id="detail"></p></div></div>
+</div>
+<footer>
+<button id="up" aria-label="Atas">↑</button><button id="left" aria-label="Kiri">←</button><button id="down" aria-label="Bawah">↓</button><button id="right" aria-label="Kanan">→</button>
+<button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
+</footer>
+<p>Kumpulkan semua kristal, hindari bola patroli, lalu masuk ke pintu hijau. Tahan tombol arah di keyboard atau di layar HP untuk bergerak.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const COLS=11,ROWS=7,TILE=56,STEP=10,HALF=12,RADIUS=14,PLAN_STEPS=145;
+const moves=[[0,0],[-1,0],[1,0],[0,-1],[0,1]];
+const keys={ArrowLeft:1,ArrowRight:2,ArrowUp:3,ArrowDown:4,KeyA:1,KeyD:2,KeyW:3,KeyS:4};
+const id=(x,y)=>y*COLS+x;
+const horizontal=(y,x1,x2,period,phase=0)=>[x1,y,x2,y,period,phase];
+const vertical=(x,y1,y2,period,phase=0)=>[x,y1,x,y2,period,phase];
+function makeLevel(name,goal,crystals,gates,patrols){
+  const walls=new Set();
+  for(const [x,...gaps] of gates)for(let y=0;y<ROWS;y++)if(!gaps.includes(y))walls.add(id(x,y));
+  return {name,goal:id(...goal),walls,patrols,
+    crystals:new Map(crystals.map(([x,y],i)=>[id(x,y),1<<i])),all:(1<<crystals.length)-1};
+}
+const levels=[
+  makeLevel('Celah Pertama',[10,3],[[6,3]],[],[vertical(4,0,6,186)]),
+  makeLevel('Dua Patroli',[10,3],[[5,1]],[[7,1,4]],[vertical(3,0,6,165),vertical(8,0,6,170,55)]),
+  makeLevel('Jalur Silang',[10,4],[[4,5],[8,2]],[[6,2,5]],[horizontal(3,1,5,133),vertical(4,0,6,156,38),vertical(8,0,6,169)]),
+  makeLevel('Sela Bergantian',[10,1],[[5,4],[8,5]],[[3,1,5],[7,2,4]],[vertical(2,0,6,139,35),vertical(5,0,6,151,70),vertical(9,0,6,140)]),
+  makeLevel('Lorong Ungu',[10,3],[[4,1],[8,5]],[[6,1,5]],[vertical(2,0,6,135),horizontal(4,1,5,119,33),vertical(4,0,6,145,57),vertical(8,0,6,122,30)]),
+  makeLevel('Simpang Balik',[10,5],[[3,0],[8,2]],[[5,1,3,5]],[vertical(2,0,6,127),vertical(4,0,6,137,20),horizontal(4,6,9,111,36),vertical(8,0,6,121,70)]),
+  makeLevel('Kejar Waktu',[10,2],[[4,1],[6,5],[9,1]],[[3,1,4],[7,2,5]],[vertical(2,0,6,111),vertical(5,0,6,124,40),vertical(8,0,6,118,32),horizontal(1,8,9,81)]),
+  makeLevel('Pintu Sempit',[10,5],[[2,1],[6,2],[8,5]],[[3,1,4],[7,2,4]],[vertical(2,0,6,109,15),vertical(4,0,6,118,47),vertical(6,0,6,101,11),vertical(8,0,6,104,75),vertical(9,0,6,118,25)]),
+  makeLevel('Garis Kritis',[10,1],[[4,0],[6,5],[9,4]],[[3,2,5],[7,1,5]],[vertical(2,0,6,103),horizontal(3,4,6,79,19),vertical(5,0,6,101,55),vertical(8,0,6,99,23),vertical(9,0,6,112,78)]),
+  makeLevel('Celah Terakhir',[10,3],[[2,0],[5,6],[9,1]],[[3,1,4],[7,2,5]],[vertical(1,0,6,92,20),vertical(2,0,6,99,66),vertical(4,0,6,95,40),vertical(6,0,6,91,26),vertical(8,0,6,93,84),vertical(9,0,6,97,34)])
+];
+const startCell=id(0,3), held=new Map();
+const active=()=>levels[level];
+let level=0,cell,edge,mask,time,ai,state,delay,route,routeIndex,misses=0;
+function coordinates(cell){return [(cell%COLS+.5)*TILE,(Math.floor(cell/COLS)+.5)*TILE];}
+function neighbor(from,move,walls){
+  const [dx,dy]=moves[move],x=from%COLS+dx,y=Math.floor(from/COLS)+dy;
+  if(x<0||x>=COLS||y<0||y>=ROWS)return from;
+  const to=id(x,y);
+  return walls.has(to)?from:to;
+}
+function patrolsAt(stage,frame){
+  return stage.patrols.map(([x1,y1,x2,y2,period,phase])=>{
+    const ratio=(frame+phase)%period/period;
+    const f=1-Math.abs(2*ratio-1);
+    return [(x1+(x2-x1)*f+.5)*TILE,(y1+(y2-y1)*f+.5)*TILE];
+  });
+}
+function collision(x,y,patrols){
+  return patrols.some(([px,py])=>{
+    const dx=Math.max(0,Math.abs(x-px)-HALF),dy=Math.max(0,Math.abs(y-py)-HALF);
+    return dx*dx+dy*dy<RADIUS*RADIUS;
+  });
+}
+function position(from,to,frame){
+  const [x,y]=coordinates(from),[tx,ty]=coordinates(to);
+  return [x+(tx-x)*frame/STEP,y+(ty-y)*frame/STEP];
+}
+function findRoute(stage,from,bits,clock){
+  // Each layer represents one complete move or short wait.
+  let layer=[{cell:from,bits,parent:null,to:from}];
+  for(let depth=0;depth<PLAN_STEPS&&layer.length;depth++){
+    const hazards=Array.from({length:STEP},(_,i)=>patrolsAt(stage,clock+depth*STEP+i+1));
+    const visited=new Set(),nextLayer=[];
+    for(const node of layer){
+      for(let action=0;action<moves.length;action++){
+        const to=neighbor(node.cell,action,stage.walls);
+        if(action&&to===node.cell)continue;
+        const collected=node.bits|(stage.crystals.get(to)||0);
+        const key=to*(stage.all+1)+collected;
+        if(visited.has(key))continue;
+        const safe=hazards.every((set,i)=>!collision(...position(node.cell,to,i+1),set));
+        if(!safe)continue;
+        const next={cell:to,bits:collected,parent:node,to};
+        if(to===stage.goal&&collected===stage.all){
+          const result=[];
+          for(let step=next;step.parent;step=step.parent)result.push(step.to);
+          return result.reverse();
+        }
+        visited.add(key);nextLayer.push(next);
+      }
+    }
+    layer=nextLayer;
+  }
+  return null;
+}
+function start(index,mode,initial='playing'){
+  level=index;ai=mode;state=initial;delay=0;
+  cell=startCell;edge=null;mask=time=routeIndex=0;route=null;held.clear();
+  if(ai){
+    route=findRoute(active(),cell,mask,time);
+    if(!route)ai=false;
+  }
+  refresh();
+}
+function refresh(){
+  const stage=active(), collected=[...stage.crystals.values()].filter(bit=>mask&bit).length;
+  get('stats').textContent='Level '+(level+1)+' / '+levels.length+' · Kristal '+collected+'/'+stage.crystals.size+' · Gagal '+misses;
+  get('overlay').hidden=state==='playing';
+  get('headline').textContent={ready:stage.name,paused:'Dijeda',lost:'Tertabrak!',clear:'Pintu terbuka!',won:'Semua jalur dilewati!'}[state]||'';
+  get('detail').textContent={ready:'Pilih Mulai atau Jalankan AI.',lost:'Ulangi level untuk mencoba lagi.',
+    clear:ai?'AI akan lanjut otomatis.':'Pilih Level berikutnya.',won:'Selesai dalam '+misses+' kegagalan.'}[state]||'';
+  get('play').textContent=state==='ready'?'Mulai':state==='won'?'Main lagi':'Ulangi level';
+  get('next').hidden=state!=='clear';
+  get('pause').disabled=state!=='playing'&&state!=='paused';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+}
+function next(){if(state==='clear')start(level+1,ai);}
+function restart(mode){if(state==='won'){misses=0;start(0,mode);}else start(level,mode);}
+function tick(){
+  if(state==='clear'&&ai&&--delay<=0){next();return;}
+  if(state!=='playing')return;
+  const stage=active();
+  if(!edge){
+    const to=ai?route[routeIndex++]:neighbor(cell,[...held.values()].at(-1)||0,stage.walls);
+    edge={from:cell,to:to??cell,frame:0};
+  }
+  const [x,y]=position(edge.from,edge.to,++edge.frame);
+  if(collision(x,y,patrolsAt(stage,++time))){
+    state='lost';ai=false;held.clear();misses++;sound('miss');refresh();return;
+  }
+  if(edge.frame<STEP)return;
+  cell=edge.to;edge=null;
+  const collected=mask|(stage.crystals.get(cell)||0);
+  if(mask!==collected){mask=collected;sound('point');refresh();}
+  if(cell===stage.goal&&mask===stage.all){
+    state=level+1===levels.length?'won':'clear';
+    if(state==='won')ai=false;
+    delay=55;held.clear();sound('win');refresh();
+  }
+}
+function draw(){
+  const stage=active();
+  for(let tile=0;tile<COLS*ROWS;tile++){
+    const [x,y]=coordinates(tile),wall=stage.walls.has(tile);
+    ctx.fillStyle=wall?'#101d2b':((tile%COLS+Math.floor(tile/COLS))%2?'#2b4850':'#31515a');
+    if(tile===startCell)ctx.fillStyle='#528171';
+    if(tile===stage.goal)ctx.fillStyle=mask===stage.all?'#91ca72':'#567763';
+    ctx.fillRect(x-TILE/2,y-TILE/2,TILE,TILE);
+    if(wall){ctx.fillStyle='#243549';ctx.fillRect(x-20,y-20,40,5);}
+  }
+  const [gx,gy]=coordinates(stage.goal);
+  ctx.strokeStyle='#d8f5bc';ctx.lineWidth=2;ctx.strokeRect(gx-16,gy-19,32,38);
+  for(const [tile,bit] of stage.crystals){
+    if(mask&bit)continue;
+    const [x,y]=coordinates(tile);
+    ctx.fillStyle='#ffe190';ctx.beginPath();ctx.moveTo(x,y-12);ctx.lineTo(x+9,y);ctx.lineTo(x,y+12);ctx.lineTo(x-9,y);ctx.fill();
+  }
+  for(const [x,y] of patrolsAt(stage,time)){
+    ctx.fillStyle='#c3a3f8';ctx.beginPath();ctx.arc(x,y,RADIUS,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#5b467e';ctx.beginPath();ctx.arc(x+3,y-3,5,0,Math.PI*2);ctx.fill();
+  }
+  if(state!=='lost'){
+    const [x,y]=edge?position(edge.from,edge.to,edge.frame):coordinates(cell);
+    ctx.fillStyle='#ff986d';ctx.fillRect(x-HALF,y-HALF,HALF*2,HALF*2);
+    ctx.fillStyle='#6b3b43';ctx.fillRect(x-6,y-4,12,4);
+  }
+}
+function takeOver(){if(ai){ai=false;refresh();}}
+function steer(key,move){takeOver();held.set(key,move);}
+for(const [name,move] of [['left',1],['right',2],['up',3],['down',4]]){
+  const button=get(name);
+  button.addEventListener('pointerdown',e=>{button.setPointerCapture(e.pointerId);steer(e.pointerId,move);});
+  button.addEventListener('lostpointercapture',e=>held.delete(e.pointerId));
+}
+document.addEventListener('keydown',e=>{if(keys[e.code]){e.preventDefault();if(!e.repeat)steer(e.code,keys[e.code]);}});
+document.addEventListener('keyup',e=>held.delete(e.code));
+window.addEventListener('blur',()=>{held.clear();if(state==='playing'){state='paused';refresh();}});
+get('play').onclick=()=>{restart(false);canvas.focus();};
+get('next').onclick=()=>{next();canvas.focus();};
+get('ai').onclick=()=>{
+  if(ai)takeOver();else if(state==='clear'){ai=true;next();}else restart(true);
+  canvas.focus();
+};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';held.clear();refresh();if(state==='playing')canvas.focus();};
+let previous,elapsed=0;
+function frame(now){
+  elapsed+=Math.min(65,now-(previous??now));previous=now;
+  while(elapsed>=1000/60){tick();elapsed-=1000/60;}
+  draw();requestAnimationFrame(frame);
+}
+start(0,false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
