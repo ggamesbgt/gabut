@@ -68,6 +68,10 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .tower-jumper { position:absolute; left:48%; top:43%; border-radius:50%; width:20px;height:20px; background:#b8ecdd; }
 .tower-tilt { background:linear-gradient(#434574,#794e64); }
 .tower-tilt::before { transform:rotate(11deg); }
+.crossing { background:repeating-conic-gradient(#31515a 0% 25%,#2b4850 0% 50%) 0 0/42px 42px; }
+.crossing::before { inset:15% 20% 18% 70%; background:#101d2b; clip-path:none; }
+.crossing::after { inset:28% auto auto 61%; width:22px; height:22px; background:#c3a3f8; border-radius:50%; clip-path:none; }
+.crossing-square { position:absolute; left:35%; top:54%; width:23px; height:23px; background:#ff986d; box-shadow:31px -25px 0 -5px #ffe190; }
 </style>
 </head>
 <body>
@@ -142,6 +146,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art tower tower-tilt" aria-hidden="true"><span class="tower-jumper"></span></div>
       <div class="info">
         <div><h2>Puncak Pantul 2</h2><p>Lompat lagi sebelum bola meluncur dari pelataran.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/celah-detik.html" aria-label="Mainkan Celah Detik">
+      <div class="art crossing" aria-hidden="true"><span class="crossing-square"></span></div>
+      <div class="info">
+        <div><h2>Celah Detik</h2><p>Kumpulkan kristal dan lewati patroli dalam 10 level.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
