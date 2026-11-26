@@ -72,6 +72,11 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .crossing::before { inset:15% 20% 18% 70%; background:#101d2b; clip-path:none; }
 .crossing::after { inset:28% auto auto 61%; width:22px; height:22px; background:#c3a3f8; border-radius:50%; clip-path:none; }
 .crossing-square { position:absolute; left:35%; top:54%; width:23px; height:23px; background:#ff986d; box-shadow:31px -25px 0 -5px #ffe190; }
+.ghost-art { background:repeating-linear-gradient(90deg,#282341 0 33px,#312947 33px 66px); }
+.ghost-art::before { background:#74678d; clip-path:polygon(9% 22%,35% 22%,35% 37%,22% 37%,22% 73%,9% 73%,9% 22%,66% 23%,89% 23%,89% 72%,77% 72%,77% 38%,66% 38%,66% 23%); }
+.ghost-art::after { inset:55% auto auto 64%; width:22px; height:22px; border-radius:3px; background:#ffaf7a; box-shadow:0 0 18px #ffaf7a; clip-path:none; }
+.ghost-icon { position:absolute; left:40%; top:41%; width:32px; height:34px; border-radius:50% 50% 22% 22%; background:#acffe6; }
+.ghost-icon::after { content:""; position:absolute; left:9px; top:13px; width:4px; height:4px; border-radius:50%; background:#2d3751; box-shadow:10px 0 #2d3751; }
 </style>
 </head>
 <body>
@@ -153,6 +158,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art crossing" aria-hidden="true"><span class="crossing-square"></span></div>
       <div class="info">
         <div><h2>Celah Detik</h2><p>Kumpulkan kristal dan lewati patroli dalam 10 level.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/hantu-kabur.html" aria-label="Mainkan Hantu Kabur">
+      <div class="art ghost-art" aria-hidden="true"><span class="ghost-icon"></span></div>
+      <div class="info">
+        <div><h2>Hantu Kabur</h2><p>Jadi hantu dan kabur dari penjaga labirin.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
