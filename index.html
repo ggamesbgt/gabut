@@ -77,6 +77,9 @@ h2 { margin: 0 0 4px; font-size: 25px; }
 .ghost-art::after { inset:55% auto auto 64%; width:22px; height:22px; border-radius:3px; background:#ffaf7a; box-shadow:0 0 18px #ffaf7a; clip-path:none; }
 .ghost-icon { position:absolute; left:40%; top:41%; width:32px; height:34px; border-radius:50% 50% 22% 22%; background:#acffe6; }
 .ghost-icon::after { content:""; position:absolute; left:9px; top:13px; width:4px; height:4px; border-radius:50%; background:#2d3751; box-shadow:10px 0 #2d3751; }
+.strum { background:repeating-linear-gradient(90deg,#332947 0 19.6%,#4e3d5d 19.6% 20%); }
+.strum::before { inset:72% 6% auto; height:4px; background:#fed68b; clip-path:none; }
+.strum::after { inset:34% auto auto 25%; width:28px; height:13px; background:#fed68b; border-radius:5px; box-shadow:69px 31px #aaf1b2,137px 7px #a9d9ff; clip-path:none; }
 </style>
 </head>
 <body>
@@ -165,6 +168,13 @@ h2 { margin: 0 0 4px; font-size: 25px; }
       <div class="art ghost-art" aria-hidden="true"><span class="ghost-icon"></span></div>
       <div class="info">
         <div><h2>Hantu Kabur</h2><p>Kabur dari Penjaga Pijar di enam labirin neon.</p></div>
+        <span class="play"><span aria-hidden="true">▶</span> Main</span>
+      </div>
+    </a>
+    <a class="card" href="games/petik-irama.html" aria-label="Mainkan Petik Irama">
+      <div class="art strum" aria-hidden="true"></div>
+      <div class="info">
+        <div><h2>Petik Irama</h2><p>Tekan lima jalur nada mengikuti tiga melodi klasik.</p></div>
         <span class="play"><span aria-hidden="true">▶</span> Main</span>
       </div>
     </a>
