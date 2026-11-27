@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hantu Kabur — Gabut</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#19182c;color:#fff3e9;font:16px system-ui}main{max-width:790px;margin:auto;padding:clamp(12px,4vw,28px)}a{color:#acffe6}header{display:flex;justify-content:space-between;align-items:end;gap:8px;margin:12px 0}h1{font-size:clamp(27px,7vw,58px);letter-spacing:-.065em;margin:0;line-height:1}output{font-size:14px;color:#acffe6;text-align:right}.arena{position:relative}.arena canvas{display:block;width:100%;aspect-ratio:13/9;border:1px solid #706890;border-radius:14px;background:#282341;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;border-radius:14px;background:#19142bd1;pointer-events:none;padding:15px}.overlay[hidden],[hidden]{display:none}h2{font-size:clamp(22px,5vw,40px);margin:0}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{font:inherit;color:inherit;background:#332c51;border:1px solid #8b7daa;border-radius:8px;padding:9px 12px;touch-action:none}button[aria-pressed=true]{background:#acffe6;color:#18312c}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #acffe6;outline-offset:2px}p{color:#d5c7e0;margin:8px 0;font-size:14px}
+*{box-sizing:border-box}body{margin:0;background:#101329;color:#fff3e9;font:16px system-ui}main{max-width:790px;margin:auto;padding:clamp(12px,4vw,28px)}a{color:#acffe6}header{display:flex;justify-content:space-between;align-items:end;gap:8px;margin:12px 0}h1{font-size:clamp(27px,7vw,58px);letter-spacing:-.065em;margin:0;line-height:1}output{font-size:14px;color:#acffe6;text-align:right}.arena{position:relative}.arena canvas{display:block;width:100%;aspect-ratio:13/9;border:1px solid #706890;border-radius:14px;background:#10152f;touch-action:none}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;border-radius:14px;background:#19142bd1;pointer-events:none;padding:15px}.overlay[hidden],[hidden]{display:none}h2{font-size:clamp(22px,5vw,40px);margin:0}footer{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}button{font:inherit;color:inherit;background:#332c51;border:1px solid #8b7daa;border-radius:8px;padding:9px 12px;touch-action:none}button[aria-pressed=true]{background:#acffe6;color:#18312c}button:disabled{opacity:.45}button:focus-visible,canvas:focus-visible{outline:2px solid #acffe6;outline-offset:2px}p{color:#d5c7e0;margin:8px 0;font-size:14px}
 </style>
 <main>
 <a href="../index.html">← Kembali ke Gabut</a>
@@ -15,7 +15,7 @@
 <button id="up" aria-label="Atas">↑</button><button id="left" aria-label="Kiri">←</button><button id="down" aria-label="Bawah">↓</button><button id="right" aria-label="Kanan">→</button>
 <button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
 </footer>
-<p>Tahan tombol arah, pakai WASD, atau geser di arena. Kumpulkan lentera dan cari portal keluar sebelum Penjaga Pijar menangkapmu.</p>
+<p>Pilih arah dengan tombol panah, WASD, atau geser arena. Hantu terus bergerak sampai menemui dinding. Kumpulkan lentera besar, lalu kabur lewat portal sebelum disergap Penjaga Pijar.</p>
 </main>
 <script src="annoying-sound.js"></script>
 <script>
@@ -30,6 +30,12 @@ const cell=(x,y)=>y*COLS+x;
 function makeLevel(name,frames,interval,exit,tokens,gates){
   const walls=new Set();
   for(const [x,...gaps] of gates)for(let y=0;y<ROWS;y++)if(!gaps.includes(y))walls.add(cell(x,y));
+  const reserved=new Set([cell(...exit),cell(0,4),cell(12,8),...tokens.map(([x,y])=>cell(x,y))]);
+  const islands=[[1,2],[2,2],[4,3],[5,3],[7,5],[8,5],[10,6],[11,6],[1,6],[4,5],[8,2],[11,3]];
+  for(const [x,y] of islands){
+    const tile=cell(x,y);
+    if(!reserved.has(tile)&&!gates.some(([column])=>column===x))walls.add(tile);
+  }
   const graph=Array.from({length:CELLS},(_,i)=>{
     const x=i%COLS,y=Math.floor(i/COLS);
     return moves.map(([dx,dy])=>{
@@ -62,7 +68,7 @@ const levels=[
 ];
 const startGhost=cell(0,4),startKeeper=cell(12,8),held=new Map();
 const active=()=>levels[level];
-let level=0,state='ready',ai=false,node,attempts=0,clock=0,delay=0,route,routeIndex,swipe=0;
+let level=0,state='ready',ai=false,node,attempts=0,clock=0,delay=0,route,routeIndex,direction=0,buffered=0,prior,keeperAngle=0,trail,score=0,levelScore=0;
 function transition(stage,from,move){
   const ghost=stage.graph[from.ghost][move];
   if(ghost===from.keeper)return null;
@@ -88,15 +94,20 @@ function solve(stage,start){
   return null;
 }
 function start(index,mode,initial='playing'){
-  level=index;ai=mode;state=initial;clock=delay=routeIndex=swipe=0;held.clear();
+  level=index;ai=mode;state=initial;clock=delay=routeIndex=direction=buffered=0;held.clear();
   node={ghost:startGhost,keeper:startKeeper,phase:0,bits:0};
+  prior=node;keeperAngle=Math.PI;trail=new Set([startGhost]);levelScore=0;
   route=ai?solve(active(),node):null;
   if(ai&&!route)ai=false;
   refresh();
 }
-function refresh(){
+function updateStats(){
   const stage=active(), count=[...stage.tokens.values()].filter(bit=>node.bits&bit).length;
-  get('stats').textContent='Level '+(level+1)+' / '+levels.length+' · Lentera '+count+'/'+stage.tokens.size+' · Tertangkap '+attempts;
+  get('stats').textContent='Level '+(level+1)+' / '+levels.length+' · Lentera '+count+'/'+stage.tokens.size+' · Skor '+(score+levelScore)+' · Tertangkap '+attempts;
+}
+function refresh(){
+  updateStats();
+  const stage=active();
   get('overlay').hidden=state==='playing';
   get('status').textContent={ready:stage.name,paused:'Dijeda',lost:'Hantu tertangkap!',clear:'Berhasil kabur!',won:'Lolos sampai fajar!'}[state]||'';
   get('detail').textContent={ready:'Pilih Mulai atau Jalankan AI.',lost:'Tekan Ulangi level untuk mencoba lagi.',
@@ -108,21 +119,33 @@ function refresh(){
   get('pause').disabled=state!=='playing'&&state!=='paused';
   get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
 }
-function next(){if(state==='clear')start(level+1,ai);}
-function restart(mode){if(state==='won'){attempts=0;start(0,mode);}else start(level,mode);}
+function next(){if(state==='clear'){score+=levelScore;start(level+1,ai);}}
+function restart(mode){if(state==='won'){attempts=score=0;start(0,mode);}else start(level,mode);}
+function manualMove(stage){
+  const row=stage.graph[node.ghost];
+  const requested=[...held.values()].at(-1)||buffered;
+  if(requested&&row[requested]!==node.ghost){direction=requested;buffered=0;}
+  return direction;
+}
 function tick(){
   if(state==='clear'&&ai&&--delay<=0){next();return;}
   if(state!=='playing')return;
   const stage=active();
   if(++clock<stage.frames)return;
   clock=0;
-  const position=transition(stage,node,ai?(route[routeIndex++]??0):([...held.values()].at(-1)||swipe));
+  const position=transition(stage,node,ai?(route[routeIndex++]??0):manualMove(stage));
   if(!position){
     ai=false;state='lost';attempts++;held.clear();sound('miss');refresh();return;
   }
   const changed=position.bits!==node.bits;
-  node=position;
-  if(changed){sound('point');refresh();}
+  prior=node;node=position;
+  if(prior.keeper!==node.keeper){
+    const [px,py]=xy(prior.keeper),[x,y]=xy(node.keeper);
+    keeperAngle=Math.atan2(y-py,x-px);
+  }
+  if(!trail.has(node.ghost)){trail.add(node.ghost);levelScore+=10;}
+  if(changed){levelScore+=100;sound('point');}
+  updateStats();
   if(arrived(stage,node)){
     state=level+1===levels.length?'won':'clear';delay=55;held.clear();
     if(state==='won')ai=false;
@@ -131,12 +154,25 @@ function tick(){
 }
 function xy(id){return [(id%COLS+.5)*TILE,(Math.floor(id/COLS)+.5)*TILE];}
 function circle(x,y,r,color){ctx.beginPath();ctx.arc(x,y,r,0,2*Math.PI);ctx.fillStyle=color;ctx.fill();}
+function between(from,to){
+  const [x,y]=xy(from),[tx,ty]=xy(to);
+  const f=state==='playing'||state==='paused'?clock/active().frames:1;
+  return [x+(tx-x)*f,y+(ty-y)*f];
+}
 function draw(){
   const stage=active();
   for(let i=0;i<CELLS;i++){
     const [x,y]=xy(i),wall=stage.walls.has(i),top=y-TILE/2,left=x-TILE/2;
-    ctx.fillStyle=wall?'#4e466c':i%2?'#282341':'#292644';ctx.fillRect(left,top,TILE,TILE);
-    if(wall){ctx.fillStyle='#74678d';ctx.fillRect(left+4,top+5,TILE-8,5);}
+    ctx.fillStyle=wall?'#202956':'#10152f';ctx.fillRect(left,top,TILE,TILE);
+    if(wall){
+      ctx.fillStyle='#596fe8';
+      if(i%COLS===0||!stage.walls.has(i-1))ctx.fillRect(left,top,3,TILE);
+      if(i%COLS===COLS-1||!stage.walls.has(i+1))ctx.fillRect(left+TILE-3,top,3,TILE);
+      if(i<COLS||!stage.walls.has(i-COLS))ctx.fillRect(left,top,TILE,3);
+      if(i>=CELLS-COLS||!stage.walls.has(i+COLS))ctx.fillRect(left,top+TILE-3,TILE,3);
+    }else if(!trail.has(i)&&!stage.tokens.has(i)&&i!==stage.goal){
+      circle(x,y,2,'#e7b987');
+    }
   }
   const [gx,gy]=xy(stage.goal);
   ctx.strokeStyle=node.bits===stage.all?'#acffe6':'#867a9a';ctx.lineWidth=3;
@@ -145,12 +181,16 @@ function draw(){
     if(node.bits&bit)continue;
     const [x,y]=xy(id);circle(x,y,11,'#ffdb9250');circle(x,y,6,'#ffd98b');
   }
-  const [kx,ky]=xy(node.keeper);
-  circle(kx,ky,19,'#ff9a6660');
-  ctx.fillStyle='#ffaf7a';ctx.fillRect(kx-12,ky-12,24,24);
-  circle(kx,ky,6,'#5c3a51');
+  const [kx,ky]=between(prior.keeper,node.keeper);
+  const jaw=5+3*Math.sin(clock*.66);
+  ctx.save();ctx.translate(kx,ky);ctx.rotate(keeperAngle);
+  ctx.fillStyle='#ffba64';ctx.beginPath();
+  ctx.moveTo(-16,0);ctx.lineTo(-7,-14);ctx.lineTo(8,-14);
+  ctx.lineTo(17,-jaw-2);ctx.lineTo(3,0);ctx.lineTo(17,jaw+2);
+  ctx.lineTo(8,14);ctx.lineTo(-7,14);ctx.closePath();ctx.fill();
+  circle(-3,-7,3,'#502f50');circle(-3,7,3,'#502f50');ctx.restore();
   if(state!=='lost'){
-    const [x,y]=xy(node.ghost);
+    const [x,y]=between(prior.ghost,node.ghost);
     circle(x,y-3,13,'#acffe6');
     ctx.fillStyle='#acffe6';ctx.fillRect(x-13,y-3,26,13);
     circle(x-5,y-3,2,'#2d3751');circle(x+5,y-3,2,'#2d3751');
@@ -158,7 +198,7 @@ function draw(){
   }
 }
 function takeOver(){if(ai){ai=false;refresh();}}
-function steer(id,move){takeOver();swipe=0;held.set(id,move);}
+function steer(id,move){takeOver();buffered=move;held.set(id,move);}
 for(const [name,move] of [['left',1],['right',2],['up',3],['down',4]]){
   const button=get(name);
   button.addEventListener('pointerdown',e=>{button.setPointerCapture(e.pointerId);steer(e.pointerId,move);});
@@ -174,16 +214,16 @@ canvas.addEventListener('pointerup',e=>{
   const dx=e.clientX-swipeOrigin.x,dy=e.clientY-swipeOrigin.y;
   swipeOrigin=null;
   if(Math.max(Math.abs(dx),Math.abs(dy))<12)return;
-  takeOver();swipe=Math.abs(dx)>Math.abs(dy)?(dx<0?1:2):(dy<0?3:4);
+  takeOver();buffered=Math.abs(dx)>Math.abs(dy)?(dx<0?1:2):(dy<0?3:4);
 });
 canvas.addEventListener('lostpointercapture',()=>{swipeOrigin=null;});
 document.addEventListener('keydown',e=>{if(keys[e.code]){e.preventDefault();if(!e.repeat)steer(e.code,keys[e.code]);}});
 document.addEventListener('keyup',e=>held.delete(e.code));
-window.addEventListener('blur',()=>{held.clear();swipe=0;if(state==='playing'){state='paused';refresh();}});
+window.addEventListener('blur',()=>{held.clear();buffered=0;if(state==='playing'){state='paused';refresh();}});
 get('play').onclick=()=>{restart(false);canvas.focus();};
 get('next').onclick=()=>{next();canvas.focus();};
 get('ai').onclick=()=>{if(ai)takeOver();else if(state==='clear'){ai=true;next();}else restart(true);canvas.focus();};
-get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';held.clear();swipe=0;refresh();if(state==='playing')canvas.focus();};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';held.clear();buffered=0;refresh();if(state==='playing')canvas.focus();};
 let previous,elapsed=0;
 function frame(now){
   elapsed+=Math.min(65,now-(previous??now));previous=now;
