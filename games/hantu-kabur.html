@@ -15,7 +15,7 @@
 <button id="up" aria-label="Atas">↑</button><button id="left" aria-label="Kiri">←</button><button id="down" aria-label="Bawah">↓</button><button id="right" aria-label="Kanan">→</button>
 <button id="play">Mulai</button><button id="next" hidden>Level berikutnya</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button>
 </footer>
-<p>Pilih arah dengan tombol panah, WASD, atau geser arena. Hantu terus bergerak sampai menemui dinding. Kumpulkan lentera besar, lalu kabur lewat portal sebelum disergap Penjaga Pijar.</p>
+<p>Pilih arah dengan tombol panah, WASD, atau geser arena. Hantu terus bergerak sampai menemui dinding. Kumpulkan lentera besar, lalu kabur lewat portal sebelum disergap tiga Penjaga Pijar.</p>
 </main>
 <script src="annoying-sound.js"></script>
 <script>
@@ -55,7 +55,7 @@ function makeLevel(name,frames,interval,exit,tokens,gates){
     const dist=distances.get(to);
     return graph[from].reduce((best,n)=>dist[n]>=0&&dist[n]<dist[best]?n:best,from);
   }
-  return {name,frames,interval,goal:cell(...exit),walls,graph,toward,
+  return {name,frames,interval:interval+5,goal:cell(...exit),walls,graph,toward,
     tokens:new Map(tokens.map(([x,y],i)=>[cell(x,y),1<<i])),all:(1<<tokens.length)-1};
 }
 const levels=[
@@ -66,16 +66,24 @@ const levels=[
   makeLevel('Penjaga Siaga',10,2,[12,7],[[2,7],[6,1],[8,7],[11,2]],[[3,1,4,7],[7,1,4,7],[10,2,4,7]]),
   makeLevel('Kabur Saat Fajar',9,2,[12,4],[[2,1],[5,7],[8,0],[9,7],[11,1]],[[3,1,5,7],[6,0,4,7],[10,1,4,7]])
 ];
-const startGhost=cell(0,4),startKeeper=cell(12,8),held=new Map();
+const startGhost=cell(0,4),startKeepers=[cell(12,8),cell(12,0),cell(12,4)],held=new Map();
 const active=()=>levels[level];
-let level=0,state='ready',ai=false,node,attempts=0,clock=0,delay=0,route,routeIndex,direction=0,buffered=0,prior,keeperAngle=0,trail,score=0,levelScore=0;
+let level=0,state='ready',ai=false,node,attempts=0,clock=0,delay=0,route,routeIndex,direction=0,buffered=0,prior,keeperAngles,trail,score=0,levelScore=0;
 function transition(stage,from,move){
   const ghost=stage.graph[from.ghost][move];
-  if(ghost===from.keeper)return null;
+  if(from.keepers.includes(ghost))return null;
   const phase=(from.phase+1)%stage.interval;
-  const keeper=phase?from.keeper:stage.toward(from.keeper,ghost);
-  if(keeper===ghost)return null;
-  return {ghost,keeper,phase,bits:from.bits|(stage.tokens.get(ghost)||0)};
+  const moving=phase===0?0:phase===2?1:phase===4?2:-1;
+  let keepers=from.keepers;
+  if(moving>=0){
+    const target=stage.toward(keepers[moving],ghost);
+    if(target===ghost)return null;
+    if(!keepers.includes(target)){
+      keepers=keepers.slice();
+      keepers[moving]=target;
+    }
+  }
+  return {ghost,keepers,phase,bits:from.bits|(stage.tokens.get(ghost)||0)};
 }
 function arrived(stage,position){return position.ghost===stage.goal&&position.bits===stage.all;}
 function solve(stage,start){
@@ -88,15 +96,16 @@ function solve(stage,start){
       for(let j=i;queue[j].parent>=0;j=queue[j].parent)result.push(queue[j].move);
       return result.reverse();
     }
-    const key=((next.ghost*CELLS+next.keeper)*stage.interval+next.phase)*(stage.all+1)+next.bits;
+    const positions=next.keepers.reduce((key,keeper)=>key*CELLS+keeper,next.ghost);
+    const key=(positions*stage.interval+next.phase)*(stage.all+1)+next.bits;
     if(!visited.has(key)){visited.add(key);queue.push({...next,parent:i,move});}
   }
   return null;
 }
 function start(index,mode,initial='playing'){
   level=index;ai=mode;state=initial;clock=delay=routeIndex=direction=buffered=0;held.clear();
-  node={ghost:startGhost,keeper:startKeeper,phase:0,bits:0};
-  prior=node;keeperAngle=Math.PI;trail=new Set([startGhost]);levelScore=0;
+  node={ghost:startGhost,keepers:startKeepers,phase:0,bits:0};
+  prior=node;keeperAngles=startKeepers.map(()=>Math.PI);trail=new Set([startGhost]);levelScore=0;
   route=ai?solve(active(),node):null;
   if(ai&&!route)ai=false;
   refresh();
@@ -139,10 +148,11 @@ function tick(){
   }
   const changed=position.bits!==node.bits;
   prior=node;node=position;
-  if(prior.keeper!==node.keeper){
-    const [px,py]=xy(prior.keeper),[x,y]=xy(node.keeper);
-    keeperAngle=Math.atan2(y-py,x-px);
-  }
+  node.keepers.forEach((keeper,i)=>{
+    if(prior.keepers[i]===keeper)return;
+    const [px,py]=xy(prior.keepers[i]),[x,y]=xy(keeper);
+    keeperAngles[i]=Math.atan2(y-py,x-px);
+  });
   if(!trail.has(node.ghost)){trail.add(node.ghost);levelScore+=10;}
   if(changed){levelScore+=100;sound('point');}
   updateStats();
@@ -181,14 +191,16 @@ function draw(){
     if(node.bits&bit)continue;
     const [x,y]=xy(id);circle(x,y,11,'#ffdb9250');circle(x,y,6,'#ffd98b');
   }
-  const [kx,ky]=between(prior.keeper,node.keeper);
-  const jaw=5+3*Math.sin(clock*.66);
-  ctx.save();ctx.translate(kx,ky);ctx.rotate(keeperAngle);
-  ctx.fillStyle='#ffba64';ctx.beginPath();
-  ctx.moveTo(-16,0);ctx.lineTo(-7,-14);ctx.lineTo(8,-14);
-  ctx.lineTo(17,-jaw-2);ctx.lineTo(3,0);ctx.lineTo(17,jaw+2);
-  ctx.lineTo(8,14);ctx.lineTo(-7,14);ctx.closePath();ctx.fill();
-  circle(-3,-7,3,'#502f50');circle(-3,7,3,'#502f50');ctx.restore();
+  node.keepers.forEach((keeper,i)=>{
+    const [kx,ky]=between(prior.keepers[i],keeper);
+    const jaw=5+3*Math.sin(clock*.66+i);
+    ctx.save();ctx.translate(kx,ky);ctx.rotate(keeperAngles[i]);
+    ctx.fillStyle=['#ffba64','#f692ab','#ddd270'][i];ctx.beginPath();
+    ctx.moveTo(-16,0);ctx.lineTo(-7,-14);ctx.lineTo(8,-14);
+    ctx.lineTo(17,-jaw-2);ctx.lineTo(3,0);ctx.lineTo(17,jaw+2);
+    ctx.lineTo(8,14);ctx.lineTo(-7,14);ctx.closePath();ctx.fill();
+    circle(-3,-7,3,'#502f50');circle(-3,7,3,'#502f50');ctx.restore();
+  });
   if(state!=='lost'){
     const [x,y]=between(prior.ghost,node.ghost);
     circle(x,y-3,13,'#acffe6');
