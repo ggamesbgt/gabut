@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="id">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Petik Irama — Gabut</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#151422;color:#fcf1e8;font:16px system-ui}main{max-width:630px;margin:auto;padding:clamp(12px,4vw,24px)}a{color:#fed68b}h1{margin:9px 0;font-size:clamp(32px,7vw,58px);letter-spacing:-.06em}header,.hud{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px}output{color:#fed68b;font-size:14px}select{max-width:100%}.arena{position:relative;width:min(100%,420px);margin:auto}.arena canvas{display:block;width:100%;height:min(56svh,520px);background:#242339;border:1px solid #695979;border-radius:12px}.overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;padding:12px;background:#151324c9;border-radius:12px;pointer-events:none}.overlay[hidden],[hidden]{display:none}h2{font-size:clamp(24px,5vw,40px);margin:0}footer,.pads{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.pads{display:grid;grid-template-columns:repeat(5,1fr);width:min(100%,420px);margin-inline:auto}.pads button{border-top:4px solid var(--lane);font-weight:750;padding:8px 0;touch-action:none}.pads button.active{background:var(--lane);color:#20182c}button,select{font:inherit;color:inherit;background:#342842;border:1px solid #846d92;border-radius:8px;padding:7px 10px}button[aria-pressed=true]{background:#fed68b;color:#2a1c31}button:disabled{opacity:.45}button:focus-visible,select:focus-visible,canvas:focus-visible{outline:2px solid #fed68b;outline-offset:2px}p{color:#dccde4;font-size:14px;margin:8px 0}
+</style>
+<main>
+<a href="../index.html">← Kembali ke Gabut</a>
+<header><h1>Petik Irama</h1><select id="song" aria-label="Pilih lagu">
+<option value="0">1 · Twinkle, Twinkle, Little Star</option>
+<option value="1">2 · Frère Jacques</option>
+<option value="2">3 · Ode to Joy</option>
+</select></header>
+<div class="hud"><output id="stats"></output><output id="timing"></output></div>
+<div class="arena">
+<canvas width="420" height="470" tabindex="0" aria-label="Lima jalur nada Petik Irama"></canvas>
+<div class="overlay" id="overlay" role="status"><div><h2 id="status"></h2><p id="detail"></p></div></div>
+</div>
+<div class="pads" id="pads"></div>
+<footer><button id="play">Mulai</button><button id="next" hidden>Lagu berikutnya</button><button id="ai" aria-pressed="false">Jalankan AI</button><button id="pause">Jeda</button><button id="music" aria-pressed="true">Musik: ON</button><button id="sound" aria-pressed="false">Bunyi usil: OFF</button></footer>
+<p>Tekan A, S, D, J, K atau ketuk tombol warna saat not mencapai garis. Jika dua not sejajar, tekan kedua jalur pada ketukan yang sama.</p>
+<p>Melodi tradisional dan Beethoven. Aransemen dan suara disintesis di browser.</p>
+</main>
+<script src="annoying-sound.js"></script>
+<script>
+'use strict';
+const get=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const sound=typeof bindAnnoyingSound==='function'?bindAnnoyingSound(get('sound')):()=>{};
+const colors=['#fb9b9c','#fed68b','#aaf1b2','#a9d9ff','#d8b4ff'];
+const labels=['A','S','D','J','K'], laneWidth=84, targetY=410, travel=1650, lead=1850;
+const notes={c:[0,60],d:[1,62],e:[2,64],f:[3,65],g:[4,67],a:[0,69],l:[4,55]};
+const twinkle='c c g g a a g:2 f f e e d d c:2 g g f f e e d:2 g g f f e e d:2 c c g g a a g:2 f f e e d d c:2';
+const jacques='c d e c c d e c e f g:2 e f g:2 g:.5 a:.5 g:.5 f:.5 e c g:.5 a:.5 g:.5 f:.5 e c c l c:2 c l c:2';
+const joy='e e f g g f e d c c d e e:1.5 d:.5 d:2 e e f g g f e d c c d e d:1.5 c:.5 c:2 d d e c d e:.5 f:.5 e c d e:.5 f:.5 e d c d l:2 e e f g g f e d c c d e d:1.5 c:.5 c:2';
+const songs=[
+  {title:'Twinkle, Twinkle, Little Star',bpm:100,window:160,melody:twinkle,chords:false},
+  {title:'Frère Jacques',bpm:124,window:130,melody:jacques+' '+jacques,chords:false},
+  {title:'Ode to Joy',bpm:144,window:105,melody:joy,chords:true}
+];
+const pads=labels.map((label,lane)=>{
+  const button=document.createElement('button');
+  button.textContent=label;button.style.setProperty('--lane',colors[lane]);
+  button.setAttribute('aria-label','Jalur '+label);
+  button.addEventListener('pointerdown',event=>{event.preventDefault();press(lane);});
+  button.addEventListener('click',event=>{if(event.detail===0)press(lane);});
+  get('pads').append(button);return button;
+});
+const AudioEngine=window.AudioContext||window.webkitAudioContext;
+let audio,musicOn=Boolean(AudioEngine);
+let songIndex=0,state='ready',ai=false,clock=0,chart=[],end=0,cursor=0,guide=0,beat=0,total=0;
+let score=0,combo=0,best=0,hits=0,misses=0,flash=[];
+const current=()=>songs[songIndex];
+function audioLabel(){
+  get('music').disabled=!AudioEngine;
+  get('music').textContent=AudioEngine?'Musik: '+(musicOn?'ON':'OFF'):'Musik tidak tersedia';
+  get('music').setAttribute('aria-pressed',String(musicOn));
+}
+async function unlock(){
+  if(!musicOn)return;
+  try{audio??=new AudioEngine();if(audio.state!=='running')await audio.resume();}
+  catch{musicOn=false;audioLabel();}
+}
+function tone(midi,duration,volume,wave){
+  if(!musicOn||audio?.state!=='running')return;
+  const now=audio.currentTime,osc=audio.createOscillator(),gain=audio.createGain();
+  osc.type=wave;osc.frequency.value=440*2**((midi-69)/12);
+  gain.gain.setValueAtTime(volume,now);
+  gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+  osc.connect(gain).connect(audio.destination);osc.start(now);osc.stop(now+duration);
+}
+function build(song){
+  const stride=60000/song.bpm,result=[];
+  let count=0;
+  for(const token of song.melody.split(' ')){
+    const [name,duration='1']=token.split(':'),[lane,midi]=notes[name];
+    const at=lead+count*stride;
+    result.push({lane,midi,at,state:0,melody:true});
+    if(song.chords&&Number.isInteger(count)&&count%4===0){
+      const bass=midi-12;
+      result.push({lane:(lane+2)%labels.length,midi:bass,at,state:0,melody:false});
+    }
+    count+=Number(duration);
+  }
+  return {result,end:lead+count*stride+280};
+}
+function meters(){
+  get('stats').textContent='Skor '+score+' · Kombo '+combo+' · Meleset '+misses;
+}
+function refresh(){
+  const accuracy=Math.round(100*hits/total);
+  get('overlay').hidden=state==='playing';
+  get('status').textContent={ready:'Siap main?',paused:'Dijeda',finished:'Lagu selesai'}[state]||'';
+  get('detail').textContent=state==='finished'?'Akurasi '+accuracy+'% · Kombo terbaik '+best:
+    state==='ready'?current().bpm+' BPM · '+(current().chords?'Not ganda':'Not tunggal'):'';
+  get('play').textContent=state==='ready'?'Mulai':'Ulangi lagu';
+  get('next').hidden=state!=='finished'||songIndex===songs.length-1;
+  get('ai').textContent=ai?'Ambil alih':'Jalankan AI';
+  get('ai').setAttribute('aria-pressed',String(ai));
+  get('pause').disabled=state!=='playing'&&state!=='paused';
+  get('pause').textContent=state==='paused'?'Lanjutkan':'Jeda';
+  meters();
+}
+function reset(mode,initial='playing'){
+  const built=build(current());chart=built.result;end=built.end;total=chart.length;
+  state=initial;ai=mode;clock=cursor=guide=score=combo=best=hits=misses=0;beat=lead;
+  flash=labels.map(()=>-1);get('timing').textContent='';
+  refresh();
+}
+function hit(note,error){
+  note.state=1;flash[note.lane]=clock+145;hits++;combo++;best=Math.max(combo,best);
+  score+=(error<=45?100:60)+Math.min(40,combo*2);
+  get('timing').textContent=error<=45?'Tepat!':'Masuk';
+  tone(note.midi,.22,.10,'triangle');meters();
+}
+function miss(){
+  combo=0;misses++;get('timing').textContent='Meleset';
+  sound('miss');meters();
+}
+function press(lane){
+  if(state!=='playing')return;
+  if(ai){ai=false;refresh();}
+  const limit=current().window;
+  let closest;
+  for(let i=cursor;i<chart.length&&chart[i].at<=clock+limit;i++){
+    const note=chart[i];
+    if(note.state||note.lane!==lane||note.at<clock-limit)continue;
+    if(!closest||Math.abs(note.at-clock)<Math.abs(closest.at-clock))closest=note;
+  }
+  if(closest)hit(closest,Math.abs(closest.at-clock));
+  else {flash[lane]=clock+85;combo=0;get('timing').textContent='Di luar ketukan';sound('miss');meters();}
+}
+function step(delta){
+  if(state!=='playing')return;
+  clock+=delta;
+  const stride=60000/current().bpm;
+  while(beat<=clock){tone(36,.13,.14,'sine');beat+=stride;}
+  while(guide<chart.length&&chart[guide].at<=clock){
+    const note=chart[guide++];
+    if(ai&&!note.state)hit(note,0);
+    else if(note.melody&&!note.state)tone(note.midi,.16,.038,'triangle');
+  }
+  while(cursor<chart.length&&chart[cursor].at<clock-current().window){
+    const note=chart[cursor++];
+    if(!note.state){note.state=2;miss();}
+  }
+  if(clock>=end){state='finished';ai=false;sound('win');refresh();}
+}
+function draw(){
+  ctx.fillStyle='#242339';ctx.fillRect(0,0,420,470);
+  for(let lane=0;lane<labels.length;lane++){
+    pads[lane].classList.toggle('active',flash[lane]>clock);
+    const x=lane*laneWidth;
+    ctx.fillStyle=flash[lane]>clock?colors[lane]+'42':lane%2?'#2d2943':'#29253d';
+    ctx.fillRect(x,0,laneWidth-1,470);
+    ctx.fillStyle=colors[lane];ctx.fillRect(x+8,targetY-3,laneWidth-16,6);
+    ctx.font='700 16px system-ui';ctx.textAlign='center';ctx.fillText(labels[lane],x+laneWidth/2,443);
+  }
+  for(let i=cursor;i<chart.length;i++){
+    const note=chart[i];
+    if(note.at>clock+travel+100)break;
+    if(note.state)continue;
+    const x=note.lane*laneWidth+laneWidth/2;
+    const y=targetY-(note.at-clock)*targetY/travel;
+    ctx.fillStyle=colors[note.lane];ctx.beginPath();
+    ctx.moveTo(x-24,y);ctx.lineTo(x-14,y-9);ctx.lineTo(x+14,y-9);ctx.lineTo(x+24,y);
+    ctx.lineTo(x+14,y+9);ctx.lineTo(x-14,y+9);ctx.closePath();ctx.fill();
+  }
+}
+document.addEventListener('keydown',e=>{
+  const lane=labels.indexOf(e.key.toUpperCase());
+  if(lane<0||e.repeat||e.target.closest('select'))return;
+  e.preventDefault();press(lane);
+});
+get('song').onchange=()=>{songIndex=Number(get('song').value);reset(false,'ready');};
+get('play').onclick=()=>{void unlock();reset(false);canvas.focus();};
+get('ai').onclick=()=>{void unlock();if(ai){ai=false;refresh();}else reset(true);canvas.focus();};
+get('next').onclick=()=>{
+  if(state!=='finished'||songIndex>=songs.length-1)return;
+  get('song').value=String(++songIndex);void unlock();reset(false);canvas.focus();
+};
+get('pause').onclick=()=>{state=state==='paused'?'playing':'paused';refresh();if(state==='playing'){void unlock();canvas.focus();}};
+get('music').onclick=()=>{musicOn=!musicOn;audioLabel();void unlock();};
+window.addEventListener('blur',()=>{if(state==='playing'){state='paused';refresh();}});
+let last;
+function frame(time){step(Math.min(50,time-(last??time)));last=time;draw();requestAnimationFrame(frame);}
+audioLabel();reset(false,'ready');requestAnimationFrame(frame);
+</script>
+</html>
